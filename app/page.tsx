@@ -1,6 +1,7 @@
 import { auth, currentUser, clerkClient } from "@clerk/nextjs/server";
 import { AppShell } from "@/components/app-shell";
 import { OrgAutoActivator } from "@/components/org/org-auto-activator";
+import { getDashboardAnalyses } from "@/lib/db/analyses";
 
 export default async function HomePage() {
   const { userId, orgId, orgSlug } = await auth();
@@ -62,6 +63,10 @@ export default async function HomePage() {
     }
   }
 
+  // Read analyses visible to the current organization via Supabase RLS.
+  // The query does NOT filter by organization in application code.
+  const analyses = await getDashboardAnalyses();
+
   return (
     <>
       {targetAutoActivateId && <OrgAutoActivator targetOrgId={targetAutoActivateId} />}
@@ -70,6 +75,7 @@ export default async function HomePage() {
         serverOrgName={activeOrgName}
         serverOrgSlug={activeOrgSlug ?? null}
         userEmail={user?.primaryEmailAddress?.emailAddress ?? null}
+        analyses={analyses}
       />
     </>
   );
