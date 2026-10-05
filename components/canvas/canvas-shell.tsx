@@ -93,6 +93,7 @@ export function CanvasShell({ data, repoName = "honojs/hono" }: CanvasShellProps
         {/* Center Column: Graph Canvas Viewport with Folding & Panels */}
         <CanvasCenter
           data={data}
+          repoName={repoName}
           folding={folding}
           selectedNodeId={selectedNodeId}
           selectedFilePath={selectedFilePath}

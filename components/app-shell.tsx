@@ -1,4 +1,8 @@
-import React from "react";
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { createBrowserDbClient } from "@/lib/db/client";
 import { AppHeader } from "./app-header";
 import { AnalysisCard } from "./dashboard/analysis-card";
 import { EmptyState } from "./dashboard/empty-state";
@@ -17,11 +21,144 @@ export function AppShell({
   serverOrgName,
   serverOrgSlug,
   userEmail,
-  analyses = [],
+  analyses: initialAnalyses = [],
 }: AppShellProps) {
+  const { getToken } = useAuth();
+  const [analyses, setAnalyses] = useState<AnalysisRow[]>(initialAnalyses || []);
+
+  // Sync state if initialAnalyses prop updates
+  useEffect(() => {
+    setAnalyses(initialAnalyses || []);
+  }, [initialAnalyses]);
+
+  const refreshAnalyses = useCallback(async () => {
+    try {
+      const token = await getToken();
+      const supabase = createBrowserDbClient(token);
+      const { data, error } = await supabase
+        .from("analyses")
+        .select(`
+          id,
+          org_id,
+          project_id,
+          status,
+          stage,
+          stage_message,
+          error_message,
+          commit_hash,
+          total_files,
+          parsed_files,
+          skipped_files,
+          coverage_percent,
+          started_at,
+          completed_at,
+          created_at,
+          project:projects (
+            id,
+            name,
+            repo_url,
+            default_branch
+          )
+        `)
+        .order("created_at", { ascending: false });
+
+      if (!error && data) {
+        setAnalyses(
+          data.map((row: any) => ({
+            ...row,
+            project: Array.isArray(row.project) ? row.project[0] : row.project,
+          })) as AnalysisRow[]
+        );
+      }
+    } catch {
+      // Ignore background sync errors
+    }
+  }, [getToken]);
+
+  // Realtime subscription for team updates in dashboard (e.g. second tab during a run)
+  useEffect(() => {
+    if (!serverOrgId) return;
+
+    let isMounted = true;
+    let channel: any = null;
+
+    async function setupRealtime() {
+      try {
+        const token = await getToken();
+        if (!isMounted) return;
+        const supabase = createBrowserDbClient(token);
+
+        channel = supabase.channel(`org:${serverOrgId}`, {
+          config: { private: true },
+        });
+
+        // 1. Listen for broadcast status_change from trigger
+        channel.on("broadcast", { event: "status_change" }, (payload: any) => {
+          if (!isMounted || !payload?.payload) return;
+          const updated = payload.payload;
+
+          setAnalyses((prev) => {
+            const exists = prev.some((a) => a.id === updated.id);
+            if (!exists) {
+              refreshAnalyses();
+              return prev;
+            }
+            return prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a));
+          });
+        });
+
+        // 2. Postgres changes on analyses table
+        channel.on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "analyses",
+          },
+          (payload: any) => {
+            if (!isMounted) return;
+            if (payload.eventType === "INSERT") {
+              refreshAnalyses();
+            } else if (payload.eventType === "UPDATE" && payload.new) {
+              const updated = payload.new;
+              setAnalyses((prev) =>
+                prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a))
+              );
+            }
+          }
+        );
+
+        channel.subscribe();
+      } catch (err) {
+        console.warn("[Dashboard Realtime Notice]:", err);
+      }
+    }
+
+    setupRealtime();
+
+    return () => {
+      isMounted = false;
+      if (channel) channel.unsubscribe();
+    };
+  }, [serverOrgId, getToken, refreshAnalyses]);
+
+  // Polling fallback when there are active/in-progress runs
+  useEffect(() => {
+    const hasActiveRun = analyses.some(
+      (a) => a.status !== "complete" && a.status !== "failed" && a.status !== "stale"
+    );
+    if (!hasActiveRun) return;
+
+    const interval = setInterval(() => {
+      refreshAnalyses();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [analyses, refreshAnalyses]);
+
   const safeAnalyses = analyses || [];
   const completedCount = safeAnalyses.filter((a) => a.status === "complete").length;
-  const inProgressCount = safeAnalyses.filter((a) => a.status === "parsing").length;
+  const inProgressCount = safeAnalyses.filter((a) => a.status !== "complete" && a.status !== "failed" && a.status !== "stale").length;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--bg-canvas)] text-[var(--text-primary)] font-mono">

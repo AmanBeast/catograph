@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { AnalyzeForm } from "@/components/dashboard/analyze-form";
 
 interface AppHeaderProps {
   serverOrgName?: string | null;
@@ -50,21 +51,9 @@ export function AppHeader({ serverOrgName, serverOrgId }: AppHeaderProps) {
         </div>
       </div>
 
-      {/* Repo Input Placeholder & Canvas Preview */}
-      <div className="hidden md:flex items-center flex-1 max-w-md mx-4 gap-2">
-        <div className="flex-1 flex items-center gap-2 px-2.5 py-1 rounded border border-[var(--border)] bg-[var(--bg-subtle)] text-xs font-mono text-[var(--text-muted)] cursor-not-allowed">
-          <span className="text-[var(--text-muted)]">github.com/</span>
-          <span className="truncate">owner/repo</span>
-          <span className="ml-auto text-[10px] border border-[var(--border)] px-1 py-0.2 rounded bg-[var(--bg-surface)]">
-            Phase 7
-          </span>
-        </div>
-        <Link
-          href="/preview"
-          className="text-[11px] font-mono text-[var(--accent)] hover:underline border border-[var(--border)] px-2 py-1 rounded bg-[var(--bg-subtle)] hover:bg-[var(--border-subtle)] transition-colors shrink-0"
-        >
-          Canvas &rarr;
-        </Link>
+      {/* Live Repo Input Form (Phase 7) */}
+      <div className="hidden md:flex items-center flex-1 max-w-md mx-4">
+        <AnalyzeForm compact className="w-full" />
       </div>
 
       {/* Controls: Theme & User */}

@@ -12,9 +12,22 @@ import { env } from "@/lib/env";
  * 2. Token-backed client: The token and organization claim travel with every request
  *    so Postgres RLS policies can extract the organization ID and isolate rows.
  */
-export async function createServerDbClient(): Promise<SupabaseClient> {
-  const { getToken, orgId } = await auth();
-  const token = await getToken();
+export async function createServerDbClient(options?: {
+  token?: string | null;
+  orgId?: string | null;
+}): Promise<SupabaseClient> {
+  let token = options?.token;
+  let orgId = options?.orgId;
+
+  if (token === undefined || orgId === undefined) {
+    try {
+      const clerkAuth = await auth();
+      if (token === undefined) token = await clerkAuth.getToken();
+      if (orgId === undefined) orgId = clerkAuth.orgId;
+    } catch {
+      // In background contexts where auth() is not available
+    }
+  }
 
   return createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_KEY, {
     auth: {
@@ -29,8 +42,13 @@ export async function createServerDbClient(): Promise<SupabaseClient> {
       },
     },
     accessToken: async () => {
-      const currentToken = await getToken();
-      return currentToken ?? null;
+      if (token) return token;
+      try {
+        const { getToken } = await auth();
+        return (await getToken()) ?? null;
+      } catch {
+        return null;
+      }
     },
   });
 }

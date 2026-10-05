@@ -1,0 +1,262 @@
+import { fetchAndExtractRepo, cleanupExtractDir } from "./fetcher.ts";
+import { parseRepository } from "@/lib/parser/index.ts";
+import { computeCodebaseInsights } from "@/lib/canvas/graph-math.ts";
+import { createServerDbClient } from "@/lib/db/server.ts";
+
+export interface PipelineParams {
+  analysisId: string;
+  projectId: string;
+  repoUrl: string;
+  orgId: string;
+  token?: string | null;
+}
+
+export type PipelineStage =
+  | "pending"
+  | "fetching"
+  | "extracting"
+  | "parsing"
+  | "graphing"
+  | "storing"
+  | "complete"
+  | "failed";
+
+const STAGE_MESSAGES: Record<PipelineStage, string> = {
+  pending: "Queued for analysis...",
+  fetching: "Downloading repository archive from GitHub...",
+  extracting: "Extracting repository files and inspecting tree...",
+  parsing: "Parsing TypeScript modules and constructing AST...",
+  graphing: "Resolving module dependencies and computing metrics...",
+  storing: "Saving files, edges, and metrics to database...",
+  complete: "Analysis complete",
+  failed: "Analysis failed",
+};
+
+/**
+ * Executes the complete repository analysis pipeline:
+ * Fetch archive -> Extract -> Parse AST -> Resolve Graph -> Store Rows.
+ *
+ * Guaranteed constraints:
+ * 1. Top-level catch writes a 'failed' state with the stage name and exact error message,
+ *    never leaving a row stuck mid-parse.
+ * 2. Realtime triggers publish progress updates live as the stage advances.
+ * 3. Temporary disk archives are strictly cleaned up in finally block.
+ */
+export async function runPipeline({
+  analysisId,
+  projectId,
+  repoUrl,
+  orgId,
+  token,
+}: PipelineParams): Promise<void> {
+  const supabase = await createServerDbClient({ token, orgId });
+  let currentStage: PipelineStage = "pending";
+  let extractDir: string | null = null;
+
+  async function updateStage(
+    stage: PipelineStage,
+    status: "pending" | "parsing" | "graphing" | "complete" | "failed" = "parsing",
+    customMessage?: string,
+    extraFields?: Record<string, any>
+  ) {
+    currentStage = stage;
+    const message = customMessage || STAGE_MESSAGES[stage];
+
+    const { error } = await supabase
+      .from("analyses")
+      .update({
+        status,
+        stage,
+        stage_message: message,
+        ...extraFields,
+      })
+      .eq("id", analysisId);
+
+    if (error) {
+      console.warn(`[Pipeline Stage Update Warning (${stage})]:`, error.message);
+    }
+  }
+
+  try {
+    // -------------------------------------------------------------------------
+    // STAGE 1: FETCH ARCHIVE
+    // -------------------------------------------------------------------------
+    await updateStage("fetching", "parsing", STAGE_MESSAGES.fetching);
+
+    const fetched = await fetchAndExtractRepo(repoUrl);
+    extractDir = fetched.extractDir;
+
+    // Record commit hash and update project default branch
+    await supabase
+      .from("analyses")
+      .update({
+        commit_hash: fetched.commitHash,
+      })
+      .eq("id", analysisId);
+
+    await supabase
+      .from("projects")
+      .update({
+        default_branch: fetched.defaultBranch,
+        name: fetched.repoName,
+      })
+      .eq("id", projectId);
+
+    // -------------------------------------------------------------------------
+    // STAGE 2: EXTRACTING & TREE INSPECTION
+    // -------------------------------------------------------------------------
+    await updateStage("extracting", "parsing", STAGE_MESSAGES.extracting);
+
+    // -------------------------------------------------------------------------
+    // STAGE 3: PARSING AST & MODULES
+    // -------------------------------------------------------------------------
+    await updateStage("parsing", "parsing", STAGE_MESSAGES.parsing);
+
+    const parseResult = await parseRepository(extractDir);
+
+    // -------------------------------------------------------------------------
+    // STAGE 4: GRAPHING & METRICS DERIVATION
+    // -------------------------------------------------------------------------
+    await updateStage("graphing", "graphing", STAGE_MESSAGES.graphing);
+
+    // Compute deterministic codebase insights
+    const codebaseInsights = computeCodebaseInsights(
+      parseResult.files,
+      parseResult.edges
+    );
+
+    // -------------------------------------------------------------------------
+    // STAGE 5: STORING IN DATABASE
+    // -------------------------------------------------------------------------
+    await updateStage("storing", "graphing", STAGE_MESSAGES.storing);
+
+    // 5a. Insert parsed files in batches of 200
+    const filesToInsert = parseResult.files.map((file) => ({
+      analysis_id: analysisId,
+      org_id: orgId,
+      path: file.path,
+      name: file.name,
+      extension: file.extension,
+      size_bytes: file.sizeBytes,
+      lines_count: file.linesCount,
+      status: "parsed",
+      fan_in: file.fanIn,
+      fan_out: file.fanOut,
+    }));
+
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < filesToInsert.length; i += BATCH_SIZE) {
+      const batch = filesToInsert.slice(i, i + BATCH_SIZE);
+      const { error: fileErr } = await supabase.from("files").insert(batch);
+      if (fileErr) {
+        throw new Error(`Failed to store files batch ${i / BATCH_SIZE + 1}: ${fileErr.message}`);
+      }
+    }
+
+    // 5b. Retrieve inserted file IDs to map path -> file_id for edges
+    const { data: insertedFiles, error: fetchErr } = await supabase
+      .from("files")
+      .select("id, path")
+      .eq("analysis_id", analysisId);
+
+    if (fetchErr || !insertedFiles) {
+      throw new Error(`Failed to retrieve file mapping: ${fetchErr?.message || "No files found"}`);
+    }
+
+    const pathToFileId = new Map<string, string>();
+    for (const f of insertedFiles) {
+      pathToFileId.set(f.path, f.id);
+    }
+
+    // 5c. Insert edges in batches of 500
+    const edgesToInsert = parseResult.edges
+      .map((edge) => {
+        const sourceFileId = pathToFileId.get(edge.source);
+        if (!sourceFileId) return null;
+
+        const targetFileId = edge.target ? pathToFileId.get(edge.target) || null : null;
+
+        return {
+          analysis_id: analysisId,
+          org_id: orgId,
+          source_file_id: sourceFileId,
+          target_file_id: targetFileId,
+          raw_import_path: edge.rawSpecifier,
+          import_kind: edge.kind,
+          is_resolved: edge.status === "resolved",
+          unresolved_reason:
+            edge.status === "unresolved" ? edge.unresolvedReason || "Unresolved import" : null,
+        };
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
+
+    const EDGE_BATCH_SIZE = 500;
+    for (let i = 0; i < edgesToInsert.length; i += EDGE_BATCH_SIZE) {
+      const batch = edgesToInsert.slice(i, i + EDGE_BATCH_SIZE);
+      const { error: edgeErr } = await supabase.from("edges").insert(batch);
+      if (edgeErr) {
+        throw new Error(`Failed to store edges batch ${i / EDGE_BATCH_SIZE + 1}: ${edgeErr.message}`);
+      }
+    }
+
+    // 5d. Insert insights
+    if (codebaseInsights.length > 0) {
+      const insightsToInsert = codebaseInsights.map((ins) => ({
+        analysis_id: analysisId,
+        org_id: orgId,
+        kind: ins.type,
+        title: ins.title,
+        description: ins.fixedSentence,
+        metadata: {
+          files: ins.files,
+          primaryFilePath: ins.primaryFilePath,
+          metricLabel: ins.metricLabel,
+          severity: ins.severity,
+        },
+      }));
+
+      for (let i = 0; i < insightsToInsert.length; i += BATCH_SIZE) {
+        const batch = insightsToInsert.slice(i, i + BATCH_SIZE);
+        await supabase.from("insights").insert(batch);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // STAGE 6: COMPLETE
+    // -------------------------------------------------------------------------
+    const totalFiles = parseResult.coverage.totalFilesFound;
+    const parsedFiles = parseResult.coverage.filesParsedCount;
+    const skippedFiles = parseResult.coverage.filesSkippedCount;
+    const coveragePercent = totalFiles > 0 ? (parsedFiles / totalFiles) * 100 : 100;
+
+    await updateStage("complete", "complete", STAGE_MESSAGES.complete, {
+      total_files: totalFiles,
+      parsed_files: parsedFiles,
+      skipped_files: skippedFiles,
+      coverage_percent: coveragePercent,
+      completed_at: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    const errorMsg = err?.message || "Unexpected failure occurred during repository analysis.";
+    console.error(`[Pipeline Error in stage "${currentStage}"]`, errorMsg);
+
+    try {
+      await supabase
+        .from("analyses")
+        .update({
+          status: "failed",
+          stage: currentStage,
+          error_message: errorMsg,
+          stage_message: `Failed during ${currentStage}: ${errorMsg}`,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", analysisId);
+    } catch (saveErr) {
+      console.error("[Pipeline Failed to Write Failed State]", saveErr);
+    }
+  } finally {
+    if (extractDir) {
+      await cleanupExtractDir(extractDir);
+    }
+  }
+}

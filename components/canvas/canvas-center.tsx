@@ -4,9 +4,11 @@ import React from "react";
 import type { ParseResult } from "@/lib/parser/types";
 import type { FoldingResult } from "@/lib/canvas/folding";
 import { GraphCanvas } from "./graph-canvas";
+import { CoverageBanner } from "./coverage-banner";
 
 interface CanvasCenterProps {
   data: ParseResult;
+  repoName?: string;
   folding?: FoldingResult;
   selectedNodeId: string | null;
   selectedFilePath: string | null;
@@ -22,6 +24,7 @@ interface CanvasCenterProps {
 
 export function CanvasCenter({
   data,
+  repoName = "Repository",
   folding,
   selectedNodeId,
   selectedFilePath,
@@ -43,7 +46,7 @@ export function CanvasCenter({
         <div className="flex items-center gap-2">
           <span className="font-semibold text-[var(--text-primary)]">CANVAS</span>
           <span>/</span>
-          <span className="text-[var(--text-primary)] font-medium">honojs/hono</span>
+          <span className="text-[var(--text-primary)] font-medium">{repoName}</span>
           <span className="text-[10px] text-[var(--accent)] border border-[var(--accent-muted)] px-1 py-0.2 rounded bg-[var(--bg-subtle)]">
             MAP
           </span>
@@ -63,11 +66,26 @@ export function CanvasCenter({
           <span className="flex items-center gap-1">
             <span className="text-[var(--text-muted)]">INTERNAL EDGES:</span>
             <span className="text-[var(--incoming)] font-medium">
-              {coverage.internalResolvedEdges}
+              {coverage?.internalResolvedEdges ?? 0}
             </span>
           </span>
         </div>
       </div>
+
+      {/* Coverage Banner (Phase 7): Appears when graph is partial (< 95%) */}
+      {coverage && (
+        <CoverageBanner
+          coveragePercent={
+            coverage.totalFilesFound > 0
+              ? (coverage.filesParsedCount / coverage.totalFilesFound) * 100
+              : 100
+          }
+          totalFiles={coverage.totalFilesFound}
+          parsedFiles={coverage.filesParsedCount}
+          skippedFiles={coverage.filesSkippedCount}
+          unresolvedEdgesCount={coverage.unresolvedImports}
+        />
+      )}
 
       {/* Interactive Map Viewport */}
       <div className="flex-1 relative overflow-hidden">
