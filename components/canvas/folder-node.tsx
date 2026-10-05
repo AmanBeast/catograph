@@ -13,6 +13,8 @@ export interface FolderNodeData {
   selectedFilePath: string | null;
   hoveredFilePath: string | null;
   hoveredNodeId: string | null;
+  selectedCategory?: string | null;
+  activeWalkPaths?: Set<string> | null;
   isDimmed: boolean;
   onToggleOpen: (folderId: string) => void;
   onSelectNode: (folderId: string) => void;
@@ -44,6 +46,8 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
     selectedFilePath,
     hoveredFilePath,
     hoveredNodeId,
+    selectedCategory = null,
+    activeWalkPaths = null,
     isDimmed,
     onToggleOpen,
     onSelectNode,
@@ -73,7 +77,15 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
     }
   }, [isOpen, selectedFilePath]);
 
-  const opacityClass = isDimmed ? "opacity-25" : "opacity-100";
+  const matchedFilesCount = selectedCategory
+    ? node.files.filter((f) => (f.extension?.toLowerCase() || "other") === selectedCategory).length
+    : node.files.length;
+  const isDimmedByCategory = selectedCategory !== null && matchedFilesCount === 0;
+
+  const isNodeInActiveWalk = activeWalkPaths ? node.files.some((f) => activeWalkPaths.has(f.path)) : false;
+  const isDimmedByWalk = activeWalkPaths !== null && !isNodeInActiveWalk;
+
+  const opacityClass = isDimmed || isDimmedByCategory || isDimmedByWalk ? "opacity-25" : "opacity-100";
   const transitionClass = "transition-opacity duration-150";
 
   // When node is OPEN: Renders as a Panel containing file rows
@@ -85,6 +97,8 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
         className={`w-[320px] rounded border ${
           isSelected
             ? "border-[var(--accent)] ring-1 ring-[var(--accent)]"
+            : isNodeInActiveWalk
+            ? "border-[var(--accent)] ring-2 ring-[var(--accent)]"
             : "border-[var(--border)]"
         } bg-[var(--bg-surface)] shadow-md text-xs font-mono select-none ${opacityClass} ${transitionClass}`}
       >
@@ -112,7 +126,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
               {node.label}
             </span>
             <span className="text-[10px] text-[var(--text-secondary)] border border-[var(--border)] px-1 rounded bg-[var(--bg-surface)] shrink-0">
-              {node.fileCount}
+              {selectedCategory ? `${matchedFilesCount}/${node.fileCount}` : node.fileCount}
             </span>
           </div>
 
@@ -137,6 +151,11 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
           {node.files.map((file: ParsedFile) => {
             const isFileSelected = selectedFilePath === file.path;
             const isFileHovered = hoveredFilePath === file.path;
+            const isRowDimmedByCategory =
+              selectedCategory !== null && (file.extension?.toLowerCase() || "other") !== selectedCategory;
+            const isInActiveWalk = activeWalkPaths ? activeWalkPaths.has(file.path) : false;
+            const isRowDimmedByWalk = activeWalkPaths !== null && !isInActiveWalk;
+            const isRowDimmed = isRowDimmedByCategory || isRowDimmedByWalk;
             const extColor = EXT_COLORS[file.extension] || "var(--text-muted)";
 
             return (
@@ -150,10 +169,14 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
                 onMouseEnter={() => onHoverFile?.(file.path)}
                 onMouseLeave={() => onHoverFile?.(null)}
                 className={`relative h-6 px-2.5 flex items-center justify-between cursor-pointer transition-colors text-[11px] ${
+                  isRowDimmed ? "opacity-20 hover:opacity-80" : "opacity-100"
+                } ${
                   isFileSelected
                     ? "bg-[var(--accent-muted)]/20 text-[var(--accent)] font-medium"
-                    : isFileHovered
+                    : isInActiveWalk
                     ? "bg-[var(--accent-muted)]/30 text-[var(--accent)] ring-1 ring-[var(--accent)] font-medium"
+                    : isFileHovered
+                    ? "bg-[var(--accent-muted)]/20 text-[var(--accent)] font-medium"
                     : "hover:bg-[var(--bg-subtle)] text-[var(--text-primary)]"
                 }`}
                 title={file.path}
@@ -240,11 +263,13 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
       className={`rounded border ${
         isSelected
           ? "border-[var(--accent)] ring-1 ring-[var(--accent)]"
+          : isNodeInActiveWalk
+          ? "border-[var(--accent)] ring-2 ring-[var(--accent)] shadow-md"
           : isNodeHovered
           ? "border-[var(--accent)] ring-2 ring-[var(--accent)] shadow-md"
           : "border-[var(--border)]"
       } bg-[var(--bg-surface)] shadow-xs hover:border-[var(--text-secondary)] cursor-pointer text-xs font-mono select-none flex flex-col justify-between p-2 relative ${opacityClass} ${transitionClass}`}
-      title={`Folder: ${node.folder}\nDouble-click to open panel\n${node.fileCount} files, ${node.fanIn} incoming dependents`}
+      title={`Folder: ${node.folder}\nDouble-click to open panel\n${node.fileCount} files${selectedCategory ? ` (${matchedFilesCount} matched)` : ""}, ${node.fanIn} incoming dependents`}
     >
       {/* Top Handle (Incoming) */}
       <Handle
@@ -274,7 +299,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
         </div>
 
         <span className="text-[10px] text-[var(--text-secondary)] border border-[var(--border)] px-1 rounded bg-[var(--bg-subtle)] shrink-0">
-          {node.fileCount}
+          {selectedCategory ? `${matchedFilesCount}/${node.fileCount}` : node.fileCount}
         </span>
       </div>
 

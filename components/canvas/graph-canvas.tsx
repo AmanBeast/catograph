@@ -37,6 +37,8 @@ interface GraphCanvasInnerProps {
   selectedFilePath: string | null;
   hoveredFilePath?: string | null;
   hoveredNodeId?: string | null;
+  selectedCategory?: string | null;
+  activeWalkPaths?: Set<string> | null;
   onSelectNode: (nodeId: string | null) => void;
   onSelectFile: (filePath: string | null) => void;
   onHoverFile?: (filePath: string | null) => void;
@@ -50,6 +52,8 @@ function GraphCanvasInner({
   selectedFilePath,
   hoveredFilePath = null,
   hoveredNodeId = null,
+  selectedCategory = null,
+  activeWalkPaths = null,
   onSelectNode,
   onSelectFile,
   onHoverFile = () => {},
@@ -133,12 +137,38 @@ function GraphCanvasInner({
       }
     }
 
+    // Active walk paths (Blast radius / Dependency chain / Insight highlight)
+    if (activeWalkPaths && activeWalkPaths.size > 0) {
+      for (const p of activeWalkPaths) {
+        const owner = folding.nodeByFile.get(p);
+        if (owner) activeNodes.add(owner);
+      }
+      for (const e of folding.edges) {
+        if (activeWalkPaths.has(e.source) && activeWalkPaths.has(e.target)) {
+          activeEdges.add(e.id);
+        }
+      }
+    }
+
     return {
-      hasSelection: Boolean(selectedFilePath || selectedNodeId || hoveredFilePath || hoveredNodeId),
+      hasSelection: Boolean(
+        selectedFilePath ||
+        selectedNodeId ||
+        hoveredFilePath ||
+        hoveredNodeId ||
+        (activeWalkPaths && activeWalkPaths.size > 0)
+      ),
       activeNodes,
       activeEdges,
     };
-  }, [selectedFilePath, selectedNodeId, hoveredFilePath, hoveredNodeId, folding]);
+  }, [
+    selectedFilePath,
+    selectedNodeId,
+    hoveredFilePath,
+    hoveredNodeId,
+    activeWalkPaths,
+    folding,
+  ]);
 
   // Compute layout and React Flow nodes
   const flowNodes: Node<FolderNodeData>[] = useMemo(() => {
@@ -162,6 +192,8 @@ function GraphCanvasInner({
           selectedFilePath,
           hoveredFilePath,
           hoveredNodeId,
+          selectedCategory,
+          activeWalkPaths,
           isDimmed,
           onToggleOpen: handleToggleOpen,
           onSelectNode: (id: string) => {
@@ -185,6 +217,8 @@ function GraphCanvasInner({
     selectedFilePath,
     hoveredFilePath,
     hoveredNodeId,
+    selectedCategory,
+    activeWalkPaths,
     activeElements,
     handleToggleOpen,
     onSelectNode,
@@ -244,6 +278,11 @@ function GraphCanvasInner({
         const isEdgeActive =
           !activeElements.hasSelection || activeElements.activeEdges.has(e.id);
 
+        const isWalkEdge =
+          activeWalkPaths !== null &&
+          activeWalkPaths.has(e.source) &&
+          activeWalkPaths.has(e.target);
+
         const isHoverEdge =
           Boolean(
             (selectedFilePath &&
@@ -262,24 +301,28 @@ function GraphCanvasInner({
           sourceHandle,
           targetHandle,
           type: "smoothstep",
-          animated: isHoverEdge || (isEdgeActive && activeElements.hasSelection),
+          animated: isHoverEdge || isWalkEdge || (isEdgeActive && activeElements.hasSelection),
           style: {
             stroke: isHoverEdge
+              ? "var(--accent)"
+              : isWalkEdge
               ? "var(--accent)"
               : isEdgeActive
               ? e.source === (hoveredFilePath || selectedFilePath)
                 ? "var(--outgoing)"
                 : "var(--incoming)"
               : "var(--border)",
-            strokeWidth: isHoverEdge ? 2.5 : isEdgeActive ? 1.5 : 0.75,
-            opacity: isHoverEdge ? 1 : isEdgeActive ? 0.9 : 0.15,
-            zIndex: isHoverEdge ? 20 : 0,
+            strokeWidth: isHoverEdge ? 2.5 : isWalkEdge ? 2 : isEdgeActive ? 1.5 : 0.75,
+            opacity: isHoverEdge ? 1 : isWalkEdge ? 1 : isEdgeActive ? 0.9 : 0.15,
+            zIndex: isHoverEdge ? 20 : isWalkEdge ? 15 : 0,
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
             width: isHoverEdge ? 9 : 7,
             height: isHoverEdge ? 9 : 7,
             color: isHoverEdge
+              ? "var(--accent)"
+              : isWalkEdge
               ? "var(--accent)"
               : isEdgeActive
               ? e.source === (hoveredFilePath || selectedFilePath)
@@ -292,7 +335,7 @@ function GraphCanvasInner({
     }
 
     return edgesList;
-  }, [folding.edges, openPanels, activeElements, selectedFilePath, hoveredFilePath]);
+  }, [folding.edges, openPanels, activeElements, selectedFilePath, hoveredFilePath, activeWalkPaths]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);

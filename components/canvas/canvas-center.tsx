@@ -12,6 +12,8 @@ interface CanvasCenterProps {
   selectedFilePath: string | null;
   hoveredFilePath?: string | null;
   hoveredNodeId?: string | null;
+  selectedCategory?: string | null;
+  activeWalkPaths?: Set<string> | null;
   onSelectNode: (nodeId: string | null) => void;
   onSelectFile: (filePath: string | null) => void;
   onHoverFile?: (filePath: string | null) => void;
@@ -25,6 +27,8 @@ export function CanvasCenter({
   selectedFilePath,
   hoveredFilePath = null,
   hoveredNodeId = null,
+  selectedCategory = null,
+  activeWalkPaths = null,
   onSelectNode,
   onSelectFile,
   onHoverFile = () => {},
@@ -74,6 +78,8 @@ export function CanvasCenter({
           selectedFilePath={selectedFilePath}
           hoveredFilePath={hoveredFilePath}
           hoveredNodeId={hoveredNodeId}
+          selectedCategory={selectedCategory}
+          activeWalkPaths={activeWalkPaths}
           onSelectNode={onSelectNode}
           onSelectFile={onSelectFile}
           onHoverFile={onHoverFile}
