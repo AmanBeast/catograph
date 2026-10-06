@@ -249,7 +249,6 @@ function GraphCanvasInner({
           isSelected,
           selectedFilePath,
           hoveredFilePath,
-          hoveredNodeId,
           selectedCategory,
           activeWalkPaths,
           isDimmed,
@@ -257,7 +256,6 @@ function GraphCanvasInner({
           onSelectNode: handleSelectNode,
           onSelectFile: handleSelectFile,
           onHoverFile,
-          onHoverNode,
         },
       };
     });
@@ -268,7 +266,6 @@ function GraphCanvasInner({
     selectedNodeId,
     selectedFilePath,
     hoveredFilePath,
-    hoveredNodeId,
     selectedCategory,
     activeWalkPaths,
     activeElements,
@@ -276,7 +273,6 @@ function GraphCanvasInner({
     handleSelectNode,
     handleSelectFile,
     onHoverFile,
-    onHoverNode,
   ]);
 
   // Compute React Flow edges

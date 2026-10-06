@@ -13,7 +13,7 @@ export interface FolderNodeData {
   isSelected: boolean;
   selectedFilePath: string | null;
   hoveredFilePath: string | null;
-  hoveredNodeId: string | null;
+  hoveredNodeId?: string | null;
   selectedCategory?: string | null;
   activeWalkPaths?: Set<string> | null;
   isDimmed: boolean;
@@ -50,16 +50,20 @@ function areFolderNodePropsEqual(prev: FolderNodeProps, next: FolderNodeProps): 
     p.isDimmed !== n.isDimmed ||
     p.selectedCategory !== n.selectedCategory ||
     p.selectedFilePath !== n.selectedFilePath ||
-    p.hoveredFilePath !== n.hoveredFilePath ||
     p.activeWalkPaths !== n.activeWalkPaths
   ) {
     return false;
   }
 
-  const wasThisNodeHovered = p.hoveredNodeId === p.node.id;
-  const isThisNodeHovered = n.hoveredNodeId === n.node.id;
-  if (wasThisNodeHovered !== isThisNodeHovered) {
-    return false;
+  // Only open panels need to re-render when a hovered file belongs to this node
+  if (p.isOpen && n.isOpen) {
+    const pHasHovered = Boolean(p.hoveredFilePath && p.node.files.some((f) => f.path === p.hoveredFilePath));
+    const nHasHovered = Boolean(n.hoveredFilePath && n.node.files.some((f) => f.path === n.hoveredFilePath));
+    if (pHasHovered || nHasHovered) {
+      if (p.hoveredFilePath !== n.hoveredFilePath) {
+        return false;
+      }
+    }
   }
 
   return true;
@@ -72,7 +76,6 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
     isSelected,
     selectedFilePath,
     hoveredFilePath,
-    hoveredNodeId,
     selectedCategory = null,
     activeWalkPaths = null,
     isDimmed,
@@ -133,7 +136,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
           type="target"
           position={Position.Left}
           id="node-in"
-          className="!bg-[var(--border)] !w-2 !h-2"
+          className="!bg-[var(--border)] !w-2 !h-2 pointer-events-none"
         />
 
         {/* Panel Header: Clicking or double clicking closes back to single node */}
@@ -267,15 +270,13 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
           type="source"
           position={Position.Right}
           id="node-out"
-          className="!bg-[var(--border)] !w-2 !h-2"
+          className="!bg-[var(--border)] !w-2 !h-2 pointer-events-none"
         />
       </div>
     );
   }
 
   // When node is FOLDED: Single compact box whose height carries dependent fan-in
-  const isNodeHovered = hoveredNodeId === node.id;
-
   return (
     <div
       onClick={(e) => {
@@ -286,20 +287,16 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
         e.stopPropagation();
         onToggleOpen(node.id);
       }}
-      onMouseEnter={() => onHoverNode?.(node.id)}
-      onMouseLeave={() => onHoverNode?.(null)}
       style={{
         width: `${node.width}px`,
         height: `${node.height}px`,
       }}
       className={`rounded border ${
         isSelected
-          ? "border-[var(--accent)] ring-1 ring-[var(--accent)]"
+          ? "border-[var(--accent)] ring-1 ring-[var(--accent)] shadow-md"
           : isNodeInActiveWalk
           ? "border-[var(--accent)] ring-2 ring-[var(--accent)] shadow-md"
-          : isNodeHovered
-          ? "border-[var(--accent)] ring-2 ring-[var(--accent)] shadow-md"
-          : "border-[var(--border)] hover:border-[var(--accent)] hover:ring-1 hover:ring-[var(--accent)]"
+          : "border-[var(--border)] hover:border-[var(--accent)] hover:ring-1 hover:ring-[var(--accent)] hover:shadow-xs"
       } bg-[var(--bg-surface)] shadow-xs cursor-pointer text-xs font-mono select-none flex flex-col justify-between p-2 relative ${opacityClass}`}
       title={`Folder: ${node.folder}\nDouble-click to open panel\n${node.fileCount} files${selectedCategory ? ` (${matchedFilesCount} matched)` : ""}, ${node.fanIn} incoming dependents`}
     >
@@ -308,7 +305,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
         type="target"
         position={Position.Left}
         id="node-in"
-        className="!bg-[var(--incoming)] !w-2 !h-2 !border-none"
+        className="!bg-[var(--incoming)] !w-2 !h-2 !border-none pointer-events-none"
       />
 
       {/* Node Header */}
@@ -359,7 +356,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
         type="source"
         position={Position.Right}
         id="node-out"
-        className="!bg-[var(--outgoing)] !w-2 !h-2 !border-none"
+        className="!bg-[var(--outgoing)] !w-2 !h-2 !border-none pointer-events-none"
       />
     </div>
   );
