@@ -38,6 +38,32 @@ const EXT_COLORS: Record<string, string> = {
   css: "#ec4899",
 };
 
+function areFolderNodePropsEqual(prev: FolderNodeProps, next: FolderNodeProps): boolean {
+  const p = prev.data;
+  const n = next.data;
+
+  if (
+    p.node !== n.node ||
+    p.isOpen !== n.isOpen ||
+    p.isSelected !== n.isSelected ||
+    p.isDimmed !== n.isDimmed ||
+    p.selectedCategory !== n.selectedCategory ||
+    p.selectedFilePath !== n.selectedFilePath ||
+    p.hoveredFilePath !== n.hoveredFilePath ||
+    p.activeWalkPaths !== n.activeWalkPaths
+  ) {
+    return false;
+  }
+
+  const wasThisNodeHovered = p.hoveredNodeId === p.node.id;
+  const isThisNodeHovered = n.hoveredNodeId === n.node.id;
+  if (wasThisNodeHovered !== isThisNodeHovered) {
+    return false;
+  }
+
+  return true;
+}
+
 export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
   const {
     node,
@@ -86,7 +112,6 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
   const isDimmedByWalk = activeWalkPaths !== null && !isNodeInActiveWalk;
 
   const opacityClass = isDimmed || isDimmedByCategory || isDimmedByWalk ? "opacity-25" : "opacity-100";
-  const transitionClass = "transition-opacity duration-150";
 
   // When node is OPEN: Renders as a Panel containing file rows
   if (isOpen) {
@@ -100,7 +125,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
             : isNodeInActiveWalk
             ? "border-[var(--accent)] ring-2 ring-[var(--accent)]"
             : "border-[var(--border)]"
-        } bg-[var(--bg-surface)] shadow-md text-xs font-mono select-none ${opacityClass} ${transitionClass}`}
+        } bg-[var(--bg-surface)] shadow-md text-xs font-mono select-none ${opacityClass}`}
       >
         {/* Node-level target handle at left */}
         <Handle
@@ -267,8 +292,8 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
           ? "border-[var(--accent)] ring-2 ring-[var(--accent)] shadow-md"
           : isNodeHovered
           ? "border-[var(--accent)] ring-2 ring-[var(--accent)] shadow-md"
-          : "border-[var(--border)]"
-      } bg-[var(--bg-surface)] shadow-xs hover:border-[var(--text-secondary)] cursor-pointer text-xs font-mono select-none flex flex-col justify-between p-2 relative ${opacityClass} ${transitionClass}`}
+          : "border-[var(--border)] hover:border-[var(--accent)] hover:ring-1 hover:ring-[var(--accent)]"
+      } bg-[var(--bg-surface)] shadow-xs cursor-pointer text-xs font-mono select-none flex flex-col justify-between p-2 relative ${opacityClass}`}
       title={`Folder: ${node.folder}\nDouble-click to open panel\n${node.fileCount} files${selectedCategory ? ` (${matchedFilesCount} matched)` : ""}, ${node.fanIn} incoming dependents`}
     >
       {/* Left Handle (Incoming) */}
@@ -330,4 +355,4 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
       />
     </div>
   );
-});
+}, areFolderNodePropsEqual);

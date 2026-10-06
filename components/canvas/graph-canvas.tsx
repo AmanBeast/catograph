@@ -6,8 +6,6 @@ import {
   Background,
   Controls,
   MiniMap,
-  useNodesState,
-  useEdgesState,
   useReactFlow,
   ReactFlowProvider,
   type Node,
@@ -100,7 +98,7 @@ function GraphCanvasInner({
     const activeEdges = new Set<string>();
 
     const targetFile = hoveredFilePath || selectedFilePath;
-    const targetNode = hoveredNodeId || selectedNodeId;
+    const targetNode = selectedNodeId;
 
     if (targetFile) {
       // Highlighting around target file
@@ -154,8 +152,6 @@ function GraphCanvasInner({
       hasSelection: Boolean(
         selectedFilePath ||
         selectedNodeId ||
-        hoveredFilePath ||
-        hoveredNodeId ||
         (activeWalkPaths && activeWalkPaths.size > 0)
       ),
       activeNodes,
@@ -165,17 +161,43 @@ function GraphCanvasInner({
     selectedFilePath,
     selectedNodeId,
     hoveredFilePath,
-    hoveredNodeId,
     activeWalkPaths,
     folding,
   ]);
 
-  // Compute layout and React Flow nodes
-  const flowNodes: Node<FolderNodeData>[] = useMemo(() => {
-    const positions = computeDagreLayout(folding.nodes, folding.edges, openPanels);
+  // Compute Dagre layout positions strictly when nodes, edges, or openPanels change.
+  // Never recompute layout on hover!
+  const nodePositionMap = useMemo(() => {
+    const map = new Map<string, { x: number; y: number }>();
+    const posMap = computeDagreLayout(folding.nodes, folding.edges, openPanels);
+    for (const node of folding.nodes) {
+      const pos = posMap.get(node.id);
+      map.set(node.id, pos ? { x: pos.x, y: pos.y } : { x: 0, y: 0 });
+    }
+    return map;
+  }, [folding.nodes, folding.edges, openPanels]);
 
+  const handleSelectNode = useCallback(
+    (id: string) => {
+      onSelectNode(selectedNodeId === id ? null : id);
+      onSelectFile(null);
+    },
+    [selectedNodeId, onSelectNode, onSelectFile]
+  );
+
+  const handleSelectFile = useCallback(
+    (filePath: string) => {
+      onSelectFile(selectedFilePath === filePath ? null : filePath);
+      const owner = folding.nodeByFile.get(filePath);
+      if (owner) onSelectNode(owner);
+    },
+    [selectedFilePath, folding.nodeByFile, onSelectFile, onSelectNode]
+  );
+
+  // Compute React Flow nodes
+  const flowNodes: Node<FolderNodeData>[] = useMemo(() => {
     return folding.nodes.map((node: FoldedNode) => {
-      const pos = positions.get(node.id) || { x: 0, y: 0 };
+      const pos = nodePositionMap.get(node.id) || { x: 0, y: 0 };
       const isOpen = openPanels.has(node.id);
       const isSelected = selectedNodeId === node.id;
       const isDimmed =
@@ -184,7 +206,7 @@ function GraphCanvasInner({
       return {
         id: node.id,
         type: "folderNode",
-        position: { x: pos.x, y: pos.y },
+        position: pos,
         data: {
           node,
           isOpen,
@@ -196,22 +218,16 @@ function GraphCanvasInner({
           activeWalkPaths,
           isDimmed,
           onToggleOpen: handleToggleOpen,
-          onSelectNode: (id: string) => {
-            onSelectNode(selectedNodeId === id ? null : id);
-            onSelectFile(null);
-          },
-          onSelectFile: (filePath: string) => {
-            onSelectFile(selectedFilePath === filePath ? null : filePath);
-            const owner = folding.nodeByFile.get(filePath);
-            if (owner) onSelectNode(owner);
-          },
+          onSelectNode: handleSelectNode,
+          onSelectFile: handleSelectFile,
           onHoverFile,
           onHoverNode,
         },
       };
     });
   }, [
-    folding,
+    folding.nodes,
+    nodePositionMap,
     openPanels,
     selectedNodeId,
     selectedFilePath,
@@ -221,8 +237,8 @@ function GraphCanvasInner({
     activeWalkPaths,
     activeElements,
     handleToggleOpen,
-    onSelectNode,
-    onSelectFile,
+    handleSelectNode,
+    handleSelectFile,
     onHoverFile,
     onHoverNode,
   ]);
@@ -337,27 +353,15 @@ function GraphCanvasInner({
     return edgesList;
   }, [folding.edges, openPanels, activeElements, selectedFilePath, hoveredFilePath, activeWalkPaths]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
-
-  // Sync state when dependencies change
-  useEffect(() => {
-    setNodes(flowNodes);
-  }, [flowNodes, setNodes]);
-
-  useEffect(() => {
-    setEdges(flowEdges);
-  }, [flowEdges, setEdges]);
-
   // Initial fit on load
   useEffect(() => {
-    if (!initialFitDone.current && nodes.length > 0) {
+    if (!initialFitDone.current && flowNodes.length > 0) {
       initialFitDone.current = true;
       setTimeout(() => {
         fitView({ padding: 0.15, duration: 400 });
       }, 100);
     }
-  }, [nodes, fitView]);
+  }, [flowNodes, fitView]);
 
   return (
     <div
@@ -370,12 +374,12 @@ function GraphCanvasInner({
       }}
     >
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
+        nodes={flowNodes}
+        edges={flowEdges}
         nodeTypes={nodeTypes}
         nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
         fitView
         minZoom={0.1}
         maxZoom={2}
