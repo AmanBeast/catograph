@@ -16,19 +16,21 @@ export interface TsConfigPaths {
   aliases: PathAlias[];
 }
 
+import ts from "typescript";
+
 /**
  * Loads compilerOptions.paths and baseUrl from tsconfig.json if present.
+ * Uses TypeScript compiler API to correctly parse JSONC and trailing commas.
  */
 export function loadTsConfigPaths(repoRoot: string): TsConfigPaths | null {
   const tsconfigPath = path.join(repoRoot, "tsconfig.json");
   if (!fs.existsSync(tsconfigPath)) return null;
 
   try {
-    const raw = fs.readFileSync(tsconfigPath, "utf8");
-    // Strip single-line and multi-line comments from json
-    const stripped = raw.replace(/\/\*[\s\S]*?\*\/|([^:]|^)\/\/.*$/gm, "");
-    const parsed = JSON.parse(stripped);
-    const compilerOptions = parsed?.compilerOptions || {};
+    const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
+    if (configFile.error) return null;
+
+    const compilerOptions = configFile.config?.compilerOptions || {};
     const baseUrl = compilerOptions.baseUrl ? normalizePath(compilerOptions.baseUrl) : ".";
     const paths = compilerOptions.paths || {};
 
