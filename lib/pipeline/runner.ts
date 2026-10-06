@@ -2,6 +2,7 @@ import { fetchAndExtractRepo, cleanupExtractDir } from "./fetcher.ts";
 import { parseRepository } from "@/lib/parser/index.ts";
 import { computeCodebaseInsights } from "@/lib/canvas/graph-math.ts";
 import { createServerDbClient } from "@/lib/db/server.ts";
+import { detectFrameworkAdapter } from "@/lib/adapters";
 
 export interface PipelineParams {
   analysisId: string;
@@ -57,7 +58,7 @@ export async function runPipeline({
     stage: PipelineStage,
     status: "pending" | "parsing" | "graphing" | "complete" | "failed" = "parsing",
     customMessage?: string,
-    extraFields?: Record<string, any>
+    extraFields?: Record<string, unknown>
   ) {
     currentStage = stage;
     const message = customMessage || STAGE_MESSAGES[stage];
@@ -125,6 +126,15 @@ export async function runPipeline({
       parseResult.edges
     );
 
+    // Phase 8: Framework adapter detection, route extraction & role classification
+    const adapter = detectFrameworkAdapter(
+      extractDir,
+      parseResult.files,
+      parseResult.edges
+    );
+    const extractedRoutes = adapter.extractRoutes(parseResult.files, extractDir);
+    const classifiedRoles = adapter.classifyFiles(parseResult.files, extractDir);
+
     // -------------------------------------------------------------------------
     // STAGE 5: STORING IN DATABASE
     // -------------------------------------------------------------------------
@@ -153,7 +163,7 @@ export async function runPipeline({
       }
     }
 
-    // 5b. Retrieve inserted file IDs to map path -> file_id for edges
+    // 5b. Retrieve inserted file IDs to map path -> file_id for edges, routes, and roles
     const { data: insertedFiles, error: fetchErr } = await supabase
       .from("files")
       .select("id, path")
@@ -221,6 +231,51 @@ export async function runPipeline({
       }
     }
 
+    // 5e. Insert extracted routes (Phase 8)
+    if (extractedRoutes.length > 0) {
+      const routesToInsert = extractedRoutes
+        .map((r) => {
+          const fileId = pathToFileId.get(r.filePath);
+          if (!fileId) return null;
+          return {
+            analysis_id: analysisId,
+            org_id: orgId,
+            file_id: fileId,
+            method: r.method,
+            pattern: r.pattern,
+            is_dynamic: r.isDynamic,
+          };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null);
+
+      for (let i = 0; i < routesToInsert.length; i += BATCH_SIZE) {
+        const batch = routesToInsert.slice(i, i + BATCH_SIZE);
+        await supabase.from("routes").insert(batch);
+      }
+    }
+
+    // 5f. Insert classified file roles (Phase 8)
+    if (classifiedRoles.length > 0) {
+      const rolesToInsert = classifiedRoles
+        .map((cr) => {
+          const fileId = pathToFileId.get(cr.filePath);
+          if (!fileId) return null;
+          return {
+            analysis_id: analysisId,
+            org_id: orgId,
+            file_id: fileId,
+            role: cr.role,
+            confidence: cr.confidence ?? 1.0,
+          };
+        })
+        .filter((cr): cr is NonNullable<typeof cr> => cr !== null);
+
+      for (let i = 0; i < rolesToInsert.length; i += BATCH_SIZE) {
+        const batch = rolesToInsert.slice(i, i + BATCH_SIZE);
+        await supabase.from("file_roles").insert(batch);
+      }
+    }
+
     // -------------------------------------------------------------------------
     // STAGE 6: COMPLETE
     // -------------------------------------------------------------------------
@@ -230,14 +285,18 @@ export async function runPipeline({
     const coveragePercent = totalFiles > 0 ? (parsedFiles / totalFiles) * 100 : 100;
 
     await updateStage("complete", "complete", STAGE_MESSAGES.complete, {
+      framework: adapter.name,
       total_files: totalFiles,
       parsed_files: parsedFiles,
       skipped_files: skippedFiles,
       coverage_percent: coveragePercent,
       completed_at: new Date().toISOString(),
     });
-  } catch (err: any) {
-    const errorMsg = err?.message || "Unexpected failure occurred during repository analysis.";
+  } catch (err: unknown) {
+    const errorMsg =
+      err instanceof Error
+        ? err.message
+        : String(err || "Unexpected failure occurred during repository analysis.");
     console.error(`[Pipeline Error in stage "${currentStage}"]`, errorMsg);
 
     try {

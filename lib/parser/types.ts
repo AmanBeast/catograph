@@ -58,11 +58,28 @@ export interface CoverageReport {
   skipSummary: Record<string, number>;
 }
 
+export interface ExtractedRoute {
+  id?: string;
+  filePath: string;
+  method: string;
+  pattern: string;
+  isDynamic: boolean;
+}
+
+export interface FileRole {
+  filePath: string;
+  role: string;
+  confidence?: number;
+}
+
 export interface ParseResult {
   repoPath: string;
+  framework?: string;
   files: ParsedFile[];
   skippedFiles: SkippedFile[];
   edges: Edge[];
   coverage: CoverageReport;
   folders: string[];
+  routes?: ExtractedRoute[];
+  fileRoles?: FileRole[];
 }

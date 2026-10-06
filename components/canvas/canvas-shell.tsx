@@ -44,8 +44,10 @@ export function CanvasShell({
     return computeRepositoryFolding(data.files, data.edges);
   }, [data.files, data.edges]);
 
-  // Derive categories strictly by file extension
-  const categories = deriveFileCategories(data.files);
+  // Derive framework-specific or generic categories
+  const categories = useMemo(() => {
+    return deriveFileCategories(data.files, data.framework, data.fileRoles);
+  }, [data.files, data.framework, data.fileRoles]);
 
   // Unified active paths for canvas highlighting
   const activeWalkPaths = useMemo(() => {

@@ -5,6 +5,7 @@ import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
 import type { FoldedNode } from "@/lib/canvas/folding";
 import type { ParsedFile } from "@/lib/parser/types";
 import { MAX_PANEL_ROWS } from "@/lib/canvas/layout";
+import { isFileMatchingCategory } from "@/lib/canvas/categories";
 
 export interface FolderNodeData {
   node: FoldedNode;
@@ -104,7 +105,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
   }, [isOpen, selectedFilePath]);
 
   const matchedFilesCount = selectedCategory
-    ? node.files.filter((f) => (f.extension?.toLowerCase() || "other") === selectedCategory).length
+    ? node.files.filter((f) => isFileMatchingCategory(f, selectedCategory)).length
     : node.files.length;
   const isDimmedByCategory = selectedCategory !== null && matchedFilesCount === 0;
 
@@ -177,7 +178,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
             const isFileSelected = selectedFilePath === file.path;
             const isFileHovered = hoveredFilePath === file.path;
             const isRowDimmedByCategory =
-              selectedCategory !== null && (file.extension?.toLowerCase() || "other") !== selectedCategory;
+              selectedCategory !== null && !isFileMatchingCategory(file, selectedCategory);
             const isInActiveWalk = activeWalkPaths ? activeWalkPaths.has(file.path) : false;
             const isRowDimmedByWalk = activeWalkPaths !== null && !isInActiveWalk;
             const isRowDimmed = isRowDimmedByCategory || isRowDimmedByWalk;

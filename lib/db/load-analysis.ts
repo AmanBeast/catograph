@@ -1,5 +1,6 @@
 import { createServerDbClient } from "./server";
-import type { ParseResult, ParsedFile, Edge } from "@/lib/parser/types";
+import type { ParseResult, ParsedFile, Edge, ExtractedRoute, FileRole, ImportKind } from "@/lib/parser/types";
+import { detectFrameworkAdapter } from "@/lib/adapters";
 
 export interface LoadedAnalysisData {
   analysis: {
@@ -8,6 +9,7 @@ export interface LoadedAnalysisData {
     stage: string | null;
     stage_message: string | null;
     commit_hash: string | null;
+    framework: string | null;
     error_message: string | null;
     coverage_percent: number;
     total_files: number;
@@ -35,6 +37,7 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
       stage,
       stage_message,
       commit_hash,
+      framework,
       error_message,
       coverage_percent,
       total_files,
@@ -64,6 +67,7 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
     stage: analysis.stage,
     stage_message: analysis.stage_message,
     commit_hash: analysis.commit_hash,
+    framework: analysis.framework || null,
     error_message: analysis.error_message,
     coverage_percent: Number(analysis.coverage_percent || 0),
     total_files: analysis.total_files || 0,
@@ -147,7 +151,7 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
         source: sourcePath,
         target: targetPath,
         rawSpecifier: e.raw_import_path,
-        kind: e.import_kind as any,
+        kind: e.import_kind as ImportKind,
         status: "resolved",
       });
     } else if (e.is_resolved && !targetPath) {
@@ -156,7 +160,7 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
         source: sourcePath,
         target: e.raw_import_path,
         rawSpecifier: e.raw_import_path,
-        kind: e.import_kind as any,
+        kind: e.import_kind as ImportKind,
         status: "external",
       });
     } else {
@@ -165,10 +169,61 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
         source: sourcePath,
         target: e.raw_import_path,
         rawSpecifier: e.raw_import_path,
-        kind: e.import_kind as any,
+        kind: e.import_kind as ImportKind,
         status: "unresolved",
         unresolvedReason: e.unresolved_reason,
       });
+    }
+  }
+
+  // Load routes (Phase 8)
+  const { data: rawRoutes } = await supabase
+    .from("routes")
+    .select("id, file_id, method, pattern, is_dynamic")
+    .eq("analysis_id", analysisId);
+
+  const routes: ExtractedRoute[] = [];
+  for (const r of rawRoutes || []) {
+    const filePath = fileIdToPath.get(r.file_id);
+    if (filePath) {
+      routes.push({
+        id: r.id,
+        filePath,
+        method: r.method,
+        pattern: r.pattern,
+        isDynamic: Boolean(r.is_dynamic),
+      });
+    }
+  }
+
+  // Load file roles (Phase 8)
+  const { data: rawRoles } = await supabase
+    .from("file_roles")
+    .select("id, file_id, role, confidence")
+    .eq("analysis_id", analysisId);
+
+  const fileRoles: FileRole[] = [];
+  for (const fr of rawRoles || []) {
+    const filePath = fileIdToPath.get(fr.file_id);
+    if (filePath) {
+      fileRoles.push({
+        filePath,
+        role: fr.role,
+        confidence: Number(fr.confidence || 1.0),
+      });
+    }
+  }
+
+  // If framework wasn't recorded or routes/roles empty (e.g. pre-Phase-8 analysis), derive dynamically
+  let detectedFramework = baseInfo.framework;
+  if (!detectedFramework) {
+    const adapter = detectFrameworkAdapter("", parsedFiles, edges);
+    detectedFramework = adapter.name;
+    if (routes.length === 0) {
+      routes.push(...adapter.extractRoutes(parsedFiles));
+    }
+    if (fileRoles.length === 0) {
+      fileRoles.push(...adapter.classifyFiles(parsedFiles));
     }
   }
 
@@ -176,10 +231,13 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
 
   const parseResult: ParseResult = {
     repoPath: baseInfo.repoName,
+    framework: detectedFramework,
     files: parsedFiles,
     skippedFiles: [],
     edges,
     folders,
+    routes,
+    fileRoles,
     coverage: {
       totalFilesFound: baseInfo.total_files || parsedFiles.length,
       filesParsedCount: baseInfo.parsed_files || parsedFiles.length,
@@ -198,7 +256,10 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
   };
 
   return {
-    analysis: baseInfo,
+    analysis: {
+      ...baseInfo,
+      framework: detectedFramework,
+    },
     parseResult,
   };
 }

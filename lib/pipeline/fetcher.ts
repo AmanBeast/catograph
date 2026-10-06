@@ -1,5 +1,4 @@
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { execFile } from "node:child_process";
@@ -40,7 +39,7 @@ export function normalizeRepoUrl(rawInput: string): NormalizedRepo {
   }
 
   // Remove trailing slashes and .git
-  let cleaned = trimmed.replace(/\.git\/?$/, "").replace(/\/+$/, "");
+  const cleaned = trimmed.replace(/\.git\/?$/, "").replace(/\/+$/, "");
 
   // Match github.com/owner/repo or owner/repo
   const githubUrlMatch = cleaned.match(/github\.com\/([^/]+)\/([^/]+)/i);
@@ -193,7 +192,9 @@ export async function fetchAndExtractRepo(
     // Write stream to tarball file
     const fileStream = createWriteStream(tarballPath);
     // Convert Web ReadableStream to Node.js Readable stream
-    const nodeReadable = Readable.fromWeb(archiveRes.body as any);
+    const nodeReadable = Readable.fromWeb(
+      archiveRes.body as unknown as import("node:stream/web").ReadableStream
+    );
     await pipeline(nodeReadable, fileStream);
 
     // Clean any prior extraction in repoDir so old removed files aren't leftover
@@ -212,12 +213,13 @@ export async function fetchAndExtractRepo(
         repoDir,
         "--strip-components=1",
       ]);
-    } catch (tarErr: any) {
+    } catch (tarErr: unknown) {
       // On Windows, bsdtar exits with code 1 if the archive contains symlinks
       // because non-elevated Windows users lack SeCreateSymbolicLinkPrivilege ("Invalid argument").
       // Verify whether the actual repository files were successfully extracted:
       const extractedEntries = await fs.readdir(repoDir).catch(() => []);
-      const stderr = (tarErr?.stderr || "") + (tarErr?.message || "");
+      const tarErrorObj = tarErr as { stderr?: string; message?: string } | null;
+      const stderr = (tarErrorObj?.stderr || "") + (tarErrorObj?.message || "");
       const isSymlinkWarning =
         stderr.includes("Invalid argument") ||
         stderr.includes("Can't create") ||

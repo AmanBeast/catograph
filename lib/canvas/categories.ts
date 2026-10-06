@@ -1,66 +1,72 @@
-import type { ParsedFile } from "@/lib/parser/types";
+import type { ParsedFile, FileRole } from "@/lib/parser/types";
+import {
+  deriveFrameworkRailCategories,
+  normalizeFrameworkName,
+  classifyFileRoleByPath,
+  type RailCategory,
+  type FrameworkName,
+} from "@/lib/adapters/taxonomy";
 
 export interface FileCategory {
-  id: string; // e.g. "ts", "tsx", "js", "json"
-  name: string; // e.g. ".ts", ".tsx", ".js"
-  extension: string;
+  id: string; // Category key (role id or extension)
+  name: string; // Display label (e.g. "Controllers", "Page routes", ".ts")
+  extension?: string;
   color: string;
   count: number;
+  order?: number;
 }
 
 /**
- * Standard palette for extensions: fact-based rather than guessed roles.
- * Palette provides clear distinction across common web and repository extensions.
+ * Derives file categories for the left rail.
+ * Reshapes categories according to the detected framework (Next.js, NestJS, React),
+ * or falls back to concrete extension categories when generic.
  */
-const EXTENSION_COLORS: Record<string, string> = {
-  ts: "#3178c6", // TypeScript Blue
-  tsx: "#0284c7", // React / TSX Sky Blue
-  js: "#f59e0b", // JavaScript Amber
-  jsx: "#ea580c", // JSX Orange
-  mjs: "#d97706", // MJS Warm Amber
-  cjs: "#b45309", // CJS Ochre
-  json: "#10b981", // JSON Green
-  css: "#ec4899", // CSS Pink
-  svg: "#8b5cf6", // SVG Purple
-  md: "#64748b", // Markdown Slate
-};
+export function deriveFileCategories(
+  files: ParsedFile[],
+  framework?: string | null,
+  fileRoles?: FileRole[]
+): FileCategory[] {
+  const normFramework: FrameworkName = normalizeFrameworkName(framework);
 
-const FALLBACK_PALETTE = [
-  "#6366f1", // Indigo
-  "#14b8a6", // Teal
-  "#84cc16", // Lime
-  "#a855f7", // Violet
-  "#f43f5e", // Rose
-  "#64748b", // Slate
-];
+  const fileRolesMap = fileRoles && fileRoles.length > 0
+    ? new Map<string, string>(fileRoles.map((fr) => [fr.filePath, fr.role]))
+    : undefined;
+
+  const railCategories: RailCategory[] = deriveFrameworkRailCategories(
+    normFramework,
+    files,
+    fileRolesMap
+  );
+
+  return railCategories.map((c) => ({
+    id: c.id,
+    name: c.name,
+    color: c.color,
+    count: c.count,
+    order: c.order,
+  }));
+}
 
 /**
- * Derives file categories strictly and factually from the file extensions.
- * No role guessing or heuristic classification.
+ * Checks whether a given file matches an active category filter.
  */
-export function deriveFileCategories(files: ParsedFile[]): FileCategory[] {
-  const counts: Record<string, number> = {};
+export function isFileMatchingCategory(
+  file: ParsedFile,
+  categoryId: string,
+  framework?: string | null,
+  fileRolesMap?: Map<string, string>
+): boolean {
+  const normFramework = normalizeFrameworkName(framework);
 
-  for (const file of files) {
-    const ext = file.extension.toLowerCase() || "other";
-    counts[ext] = (counts[ext] || 0) + 1;
+  // If generic, match extension
+  if (normFramework === "generic") {
+    return (file.extension?.toLowerCase() || "other") === categoryId.toLowerCase();
   }
 
-  const sortedExts = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  // If framework, match role
+  const role = fileRolesMap?.get(file.path) || classifyFileRoleByPath(normFramework, file.path);
+  if (role === categoryId) return true;
 
-  let fallbackIdx = 0;
-
-  return sortedExts.map((ext) => {
-    const color =
-      EXTENSION_COLORS[ext] ||
-      FALLBACK_PALETTE[fallbackIdx++ % FALLBACK_PALETTE.length];
-
-    return {
-      id: ext,
-      name: `.${ext}`,
-      extension: ext,
-      color,
-      count: counts[ext],
-    };
-  });
+  // Fallback to extension match
+  return (file.extension?.toLowerCase() || "other") === categoryId.toLowerCase();
 }

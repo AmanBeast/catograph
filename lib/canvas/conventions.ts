@@ -282,9 +282,11 @@ export interface RepositorySummaryMetrics {
 export function computeRepositorySummary(
   files: ParsedFile[],
   edges: Edge[],
-  repoName?: string
+  repoName?: string,
+  frameworkOverride?: string,
+  routesCountOverride?: number
 ): RepositorySummaryMetrics {
-  const framework = detectFramework(files, edges, repoName);
+  const framework = frameworkOverride || detectFramework(files, edges, repoName);
 
   let routesCount = 0;
   let unclassifiedCount = 0;
@@ -328,7 +330,7 @@ export function computeRepositorySummary(
     framework,
     totalFiles: files.length,
     totalImports: internalResolved,
-    routesCount,
+    routesCount: routesCountOverride !== undefined ? routesCountOverride : routesCount,
     unclassifiedCount,
     mostDependedOn,
     entryPoints,

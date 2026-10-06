@@ -85,9 +85,9 @@ export function LeftRail({
       <div className="border-t border-[var(--border)] bg-[var(--bg-subtle)] p-2.5 text-[10px] text-[var(--text-secondary)] space-y-1">
         <div className="flex justify-between items-center text-[var(--text-muted)]">
           <span>{selectedCategory ? "FILTER ACTIVE" : "PARSED FILES"}</span>
-          <span className="font-mono text-[var(--text-primary)] font-semibold">
+          <span className="font-mono text-[var(--text-primary)] font-semibold truncate max-w-[140px] text-right">
             {selectedCategory
-              ? `.${selectedCategory}`
+              ? categories.find((c) => c.id === selectedCategory)?.name || selectedCategory
               : totalFiles}
           </span>
         </div>

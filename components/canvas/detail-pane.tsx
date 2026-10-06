@@ -68,8 +68,14 @@ export function DetailPane({
 
   // Compute repository-level summary metrics (resting state)
   const repoSummary = useMemo(() => {
-    return computeRepositorySummary(data.files, data.edges, repoName);
-  }, [data.files, data.edges, repoName]);
+    return computeRepositorySummary(
+      data.files,
+      data.edges,
+      repoName,
+      data.framework,
+      data.routes?.length
+    );
+  }, [data.files, data.edges, repoName, data.framework, data.routes]);
 
   // Compute deterministic Codebase Insights (Phase 6)
   const codebaseInsights = useMemo(() => {
@@ -850,6 +856,77 @@ export function DetailPane({
                       {repoSummary.unclassifiedCount}
                     </span>
                   </div>
+                </div>
+
+                {/* Routes Table (Phase 8) */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[10px] text-[var(--text-secondary)] font-semibold border-b border-[var(--border-subtle)] pb-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#06b6d4]" />
+                      <span>ROUTES</span>
+                    </span>
+                    <span className="text-[9px] text-[var(--text-muted)] font-normal">
+                      {data.routes && data.routes.length > 0 ? `${data.routes.length} detected` : "0 detected"}
+                    </span>
+                  </div>
+
+                  {data.routes && data.routes.length > 0 ? (
+                    <div className="max-h-[220px] overflow-y-auto custom-scrollbar border border-[var(--border)] rounded bg-[var(--bg-surface)] divide-y divide-[var(--border-subtle)]">
+                      {data.routes.map((route, idx) => {
+                        const isHovered = hoveredFilePath === route.filePath;
+                        const methodColor =
+                          route.method === "GET"
+                            ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
+                            : route.method === "POST"
+                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                            : route.method === "PUT"
+                            ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                            : route.method === "DELETE"
+                            ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
+                            : route.method === "PATCH"
+                            ? "bg-purple-500/15 text-purple-400 border-purple-500/30"
+                            : "bg-zinc-500/15 text-zinc-400 border-zinc-500/30";
+
+                        return (
+                          <div
+                            key={`${route.filePath}:${route.method}:${route.pattern}:${idx}`}
+                            onClick={() => {
+                              onSelectFile(route.filePath);
+                            }}
+                            onMouseEnter={() => onHoverFile(route.filePath)}
+                            onMouseLeave={() => onHoverFile(null)}
+                            className={`p-2 flex flex-col gap-1 cursor-pointer transition-colors ${
+                              isHovered ? "bg-[var(--border-subtle)]" : "hover:bg-[var(--bg-subtle)]"
+                            }`}
+                            title={`Click to focus ${route.filePath}`}
+                          >
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider shrink-0 ${methodColor}`}>
+                                  {route.method}
+                                </span>
+                                <span className="text-[11px] font-mono text-[var(--text-primary)] font-medium truncate">
+                                  {route.pattern}
+                                </span>
+                              </div>
+                              {route.isDynamic && (
+                                <span className="text-[9px] text-[var(--text-muted)] border border-[var(--border-subtle)] px-1 rounded bg-[var(--bg-subtle)] shrink-0">
+                                  dynamic
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-[var(--text-muted)] font-mono truncate pl-0.5">
+                              {route.filePath}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-3 text-center border border-[var(--border)] rounded bg-[var(--bg-surface)] text-[10px] text-[var(--text-muted)]">
+                      No routes detected for this codebase
+                    </div>
+                  )}
                 </div>
 
                 {/* Ranked List 1: What the repository leans on most */}
