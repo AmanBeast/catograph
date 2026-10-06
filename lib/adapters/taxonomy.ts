@@ -6,7 +6,7 @@
 
 import type { ParsedFile } from "@/lib/parser/types";
 
-export type FrameworkName = "Next.js" | "NestJS" | "React" | "generic";
+export type FrameworkName = "Next.js" | "NestJS" | "Express" | "React" | "generic";
 
 export interface TaxonomyRoleDef {
   id: string; // Internal role key
@@ -35,6 +35,14 @@ export const FRAMEWORK_TAXONOMIES: Record<FrameworkName, TaxonomyRoleDef[]> = {
     { id: "dto", name: "DTOs", color: "#14b8a6", order: 5 },
     { id: "guard", name: "Guards", color: "#f97316", order: 6 },
     { id: "utility", name: "Utilities", color: "#94a3b8", order: 7 },
+  ],
+  Express: [
+    { id: "route", name: "Routes", color: "#38bdf8", order: 1 },
+    { id: "controller", name: "Controllers", color: "#f43f5e", order: 2 },
+    { id: "service", name: "Services", color: "#06b6d4", order: 3 },
+    { id: "model", name: "Models", color: "#10b981", order: 4 },
+    { id: "middleware", name: "Middleware", color: "#f97316", order: 5 },
+    { id: "utility", name: "Utilities", color: "#94a3b8", order: 6 },
   ],
   React: [
     { id: "page", name: "Pages", color: "#38bdf8", order: 1 },
@@ -81,6 +89,7 @@ export function normalizeFrameworkName(raw?: string | null): FrameworkName {
   const lower = raw.toLowerCase();
   if (lower.includes("next")) return "Next.js";
   if (lower.includes("nest")) return "NestJS";
+  if (lower.includes("express")) return "Express";
   if (lower.includes("react")) return "React";
   return "generic";
 }
@@ -91,6 +100,51 @@ export function normalizeFrameworkName(raw?: string | null): FrameworkName {
  */
 export function classifyFileRoleByPath(framework: FrameworkName, filePath: string): string {
   const norm = filePath.replace(/\\/g, "/");
+
+  if (framework === "Express") {
+    const lower = norm.toLowerCase();
+    // 1. Routes (plural or singular folder or filename convention)
+    if (
+      /(?:^|\/)(?:routes|route)\//.test(lower) ||
+      /\.(?:routes?)\.(?:js|ts|cjs|mjs)$/.test(lower)
+    ) {
+      return "route";
+    }
+
+    // 2. Controllers (plural or singular folder or filename convention)
+    if (
+      /(?:^|\/)(?:controllers|controller)\//.test(lower) ||
+      /\.(?:controller|controllers)\.(?:js|ts|cjs|mjs)$/.test(lower)
+    ) {
+      return "controller";
+    }
+
+    // 3. Services (plural or singular folder or filename convention)
+    if (
+      /(?:^|\/)(?:services|service)\//.test(lower) ||
+      /\.(?:service|services)\.(?:js|ts|cjs|mjs)$/.test(lower)
+    ) {
+      return "service";
+    }
+
+    // 4. Models / Schemas (plural or singular folder or filename convention)
+    if (
+      /(?:^|\/)(?:models|model|schemas|schema)\//.test(lower) ||
+      /\.(?:model|models|schema|schemas)\.(?:js|ts|cjs|mjs)$/.test(lower)
+    ) {
+      return "model";
+    }
+
+    // 5. Middleware (singular or plural folder or filename convention)
+    if (
+      /(?:^|\/)(?:middleware|middlewares)\//.test(lower) ||
+      /\.(?:middleware|middlewares)\.(?:js|ts|cjs|mjs)$/.test(lower)
+    ) {
+      return "middleware";
+    }
+
+    return "utility";
+  }
 
   if (framework === "NestJS") {
     if (norm.endsWith(".controller.ts") || norm.endsWith(".controller.js")) return "controller";

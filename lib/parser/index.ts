@@ -3,6 +3,7 @@ import { Project, SyntaxKind, type StringLiteral } from "ts-morph";
 import { walkRepository, normalizePath } from "./walk.ts";
 import { loadTsConfigPaths, resolveImportSpecifier } from "./resolver.ts";
 import { computeFanInOut } from "./graph.ts";
+import { extractCommonJsExports } from "./commonjs.ts";
 import { fallbackAdapter } from "./adapters/fallback.ts";
 import type { FrameworkAdapter } from "./adapters/types.ts";
 import type {
@@ -87,6 +88,12 @@ export async function parseRepository(
       continue;
     }
 
+    // Read names exported by module (CommonJS and ES)
+    const exportedNames = extractCommonJsExports(sourceFile);
+    if (exportedNames.length > 0) {
+      parsedFiles[parsedFiles.length - 1].exports = exportedNames;
+    }
+
     const rawImports: Array<{ specifier: string; kind: ImportKind }> = [];
 
     // Plain imports: import ... from '...' or import '...'
@@ -109,10 +116,13 @@ export async function parseRepository(
       }
     }
 
-    // Dynamic imports: import('...') with string literal
+    // Call expressions: dynamic imports and CommonJS require()
     const callExprs = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression);
     for (const callExpr of callExprs) {
-      if (callExpr.getExpression().getKind() === SyntaxKind.ImportKeyword) {
+      const expr = callExpr.getExpression();
+
+      // Dynamic imports: import('...') with string literal
+      if (expr.getKind() === SyntaxKind.ImportKeyword) {
         const args = callExpr.getArguments();
         if (args.length > 0) {
           const firstArg = args[0];
@@ -137,6 +147,21 @@ export async function parseRepository(
               status: "unresolved",
               unresolvedReason: failure.reason,
             });
+          }
+        }
+      }
+
+      // CommonJS require: require('...') with literal string
+      if (expr.getKind() === SyntaxKind.Identifier && expr.getText() === "require") {
+        const args = callExpr.getArguments();
+        if (args.length > 0) {
+          const firstArg = args[0];
+          if (firstArg.getKind() === SyntaxKind.StringLiteral) {
+            const spec = (firstArg as StringLiteral).getLiteralText();
+            // Avoid duplicate edges when file mixes import and require or has repeated require calls
+            if (!rawImports.some((r) => r.specifier === spec)) {
+              rawImports.push({ specifier: spec, kind: "require" });
+            }
           }
         }
       }

@@ -1,4 +1,4 @@
-import type { ParsedFile, Edge } from "@/lib/parser/types";
+import type { ParsedFile, Edge, ImportKind } from "@/lib/parser/types";
 
 export interface FoldedNode {
   id: string; // The folder identifier, e.g. "src/utils" or "."
@@ -18,7 +18,7 @@ export interface FoldedEdge {
   target: string; // File path of imported
   sourceNodeId: string; // FoldedNode id containing source
   targetNodeId: string; // FoldedNode id containing target
-  kind: "import" | "re_export" | "dynamic";
+  kind: ImportKind;
 }
 
 export interface FoldingResult {

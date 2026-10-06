@@ -3,7 +3,7 @@
  * Downstream visualization and database phases read this contract directly.
  */
 
-export type ImportKind = "import" | "re_export" | "dynamic";
+export type ImportKind = "import" | "re_export" | "dynamic" | "require";
 
 export type ResolutionStatus = "resolved" | "external" | "unresolved";
 
@@ -18,6 +18,7 @@ export interface ParsedFile {
   contentHash: string; // SHA-256 digest of file content
   fanIn: number; // Number of unique repository files that import this file
   fanOut: number; // Number of unique repository files this file imports
+  exports?: string[]; // Exported names (from CommonJS module.exports or ES exports)
 }
 
 export interface SkippedFile {

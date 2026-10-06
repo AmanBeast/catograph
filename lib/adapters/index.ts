@@ -1,5 +1,6 @@
 import { nextjsAdapter } from "./nextjs";
 import { nestjsAdapter } from "./nestjs";
+import { expressAdapter } from "./express";
 import { reactAdapter } from "./react";
 import { fallbackAdapter } from "./fallback";
 import type { FrameworkAdapter } from "./types";
@@ -7,11 +8,12 @@ import type { ParsedFile, Edge } from "@/lib/parser/types";
 
 /**
  * Detection order is strictly fixed: first match wins.
- * Next.js -> NestJS -> React -> generic (fallback).
+ * Next.js -> NestJS -> Express -> React -> generic (fallback).
  */
 export const REGISTERED_ADAPTERS: FrameworkAdapter[] = [
   nextjsAdapter,
   nestjsAdapter,
+  expressAdapter,
   reactAdapter,
   fallbackAdapter,
 ];
@@ -37,5 +39,6 @@ export * from "./types";
 export * from "./taxonomy";
 export * from "./nextjs";
 export * from "./nestjs";
+export * from "./express";
 export * from "./react";
 export * from "./fallback";
