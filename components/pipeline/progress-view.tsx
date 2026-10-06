@@ -129,17 +129,13 @@ export function ProgressView({
 
     setupRealtime();
 
-    // Fallback polling interval in case websocket disconnects
+    // Fast and reliable status polling interval
     const pollInterval = setInterval(async () => {
       if (status === "complete" || status === "failed") return;
       try {
-        const token = await getToken();
-        const supabase = createBrowserDbClient(token);
-        const { data } = await supabase
-          .from("analyses")
-          .select("status, stage, stage_message, commit_hash, error_message")
-          .eq("id", analysisId)
-          .single();
+        const res = await fetch(`/api/analyze/${analysisId}`);
+        if (!res.ok) return;
+        const data = await res.json();
 
         if (data && isMounted) {
           if (data.status) setStatus(data.status);
@@ -151,13 +147,13 @@ export function ProgressView({
           if (data.status === "complete") {
             setTimeout(() => {
               if (isMounted) onComplete();
-            }, 600);
+            }, 500);
           }
         }
       } catch {
-        // Ignore polling error
+        // Ignore network glitch during poll
       }
-    }, 2500);
+    }, 1500);
 
     return () => {
       isMounted = false;

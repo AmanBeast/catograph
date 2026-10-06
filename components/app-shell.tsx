@@ -33,47 +33,17 @@ export function AppShell({
 
   const refreshAnalyses = useCallback(async () => {
     try {
-      const token = await getToken();
-      const supabase = createBrowserDbClient(token);
-      const { data, error } = await supabase
-        .from("analyses")
-        .select(`
-          id,
-          org_id,
-          project_id,
-          status,
-          stage,
-          stage_message,
-          error_message,
-          commit_hash,
-          total_files,
-          parsed_files,
-          skipped_files,
-          coverage_percent,
-          started_at,
-          completed_at,
-          created_at,
-          project:projects (
-            id,
-            name,
-            repo_url,
-            default_branch
-          )
-        `)
-        .order("created_at", { ascending: false });
-
-      if (!error && data) {
-        setAnalyses(
-          data.map((row: any) => ({
-            ...row,
-            project: Array.isArray(row.project) ? row.project[0] : row.project,
-          })) as AnalysisRow[]
-        );
+      const res = await fetch("/api/analyses");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setAnalyses(data);
+        }
       }
     } catch {
       // Ignore background sync errors
     }
-  }, [getToken]);
+  }, []);
 
   // Realtime subscription for team updates in dashboard (e.g. second tab during a run)
   useEffect(() => {
