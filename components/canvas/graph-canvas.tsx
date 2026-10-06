@@ -60,15 +60,23 @@ function GraphCanvasInner({
   const { fitView, getZoom } = useReactFlow();
   const [openPanels, setOpenPanels] = useState<Set<string>>(new Set());
   const initialFitDone = useRef(false);
+  const lastToggleTimeRef = useRef<{ id: string; time: number }>({ id: "", time: 0 });
 
   // Compute repository folding or use provided folding
   const folding = useMemo(() => {
     return propFolding || computeRepositoryFolding(data.files, data.edges);
   }, [propFolding, data.files, data.edges]);
 
-  // Toggle open/closed folder panel
+  // Toggle open/closed folder panel with deduplication
   const handleToggleOpen = useCallback(
     (folderId: string) => {
+      const now = Date.now();
+      // Guard against duplicate trigger within 300ms from rapid bubbled/synthesized events
+      if (lastToggleTimeRef.current.id === folderId && now - lastToggleTimeRef.current.time < 300) {
+        return;
+      }
+      lastToggleTimeRef.current = { id: folderId, time: now };
+
       setOpenPanels((prev) => {
         const next = new Set(prev);
         if (next.has(folderId)) {
@@ -192,6 +200,34 @@ function GraphCanvasInner({
       if (owner) onSelectNode(owner);
     },
     [selectedFilePath, folding.nodeByFile, onSelectFile, onSelectNode]
+  );
+
+  const handleNodeDoubleClick = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("[data-file-row]")) {
+        return;
+      }
+      handleToggleOpen(node.id);
+    },
+    [handleToggleOpen]
+  );
+
+  const handleNodeClick = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest?.("[data-file-row]") ||
+        target?.closest?.("[data-toggle-button]") ||
+        target?.closest?.("[data-panel-header]")
+      ) {
+        return;
+      }
+      handleSelectNode(node.id);
+    },
+    [handleSelectNode]
   );
 
   // Compute React Flow nodes
@@ -380,6 +416,9 @@ function GraphCanvasInner({
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
+        zoomOnDoubleClick={false}
+        onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
         fitView
         minZoom={0.1}
         maxZoom={2}

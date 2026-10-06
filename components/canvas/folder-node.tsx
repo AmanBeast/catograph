@@ -136,14 +136,19 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
           className="!bg-[var(--border)] !w-2 !h-2"
         />
 
-        {/* Panel Header: Clicking closes back to single node */}
+        {/* Panel Header: Clicking or double clicking closes back to single node */}
         <div
+          data-panel-header="true"
           onClick={(e) => {
             e.stopPropagation();
             onToggleOpen(node.id);
           }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            onToggleOpen(node.id);
+          }}
           className="h-9 px-2.5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--bg-subtle)] hover:bg-[var(--border-subtle)] cursor-pointer transition-colors"
-          title={`Click to close panel (${node.folder})`}
+          title={`Click or double-click to fold back (${node.folder})`}
         >
           <div className="flex items-center gap-1.5 min-w-0">
             {/* Collapse indicator chevron */}
@@ -187,6 +192,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
             return (
               <div
                 key={file.path}
+                data-file-row="true"
                 data-selected={isFileSelected}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -310,6 +316,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
         <div className="flex items-center gap-1.5 min-w-0">
           <button
             type="button"
+            data-toggle-button="true"
             onClick={(e) => {
               e.stopPropagation();
               onToggleOpen(node.id);
