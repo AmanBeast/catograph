@@ -17,9 +17,18 @@ import { DetailPane } from "./detail-pane";
 interface CanvasShellProps {
   data: ParseResult;
   repoName?: string;
+  commitHash?: string | null;
+  onReRun?: () => void;
+  isReRunning?: boolean;
 }
 
-export function CanvasShell({ data, repoName = "honojs/hono" }: CanvasShellProps) {
+export function CanvasShell({
+  data,
+  repoName = "Repository",
+  commitHash,
+  onReRun,
+  isReRunning = false,
+}: CanvasShellProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [hoveredFilePath, setHoveredFilePath] = useState<string | null>(null);
@@ -78,7 +87,12 @@ export function CanvasShell({ data, repoName = "honojs/hono" }: CanvasShellProps
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--bg-canvas)] text-[var(--text-primary)] font-mono">
       {/* Top Header */}
-      <CanvasHeader repoName={repoName} />
+      <CanvasHeader
+        repoName={repoName}
+        commitHash={commitHash}
+        onReRun={onReRun}
+        isReRunning={isReRunning}
+      />
 
       {/* Three Columns Workspace: Fixed structure */}
       <div className="flex-1 flex overflow-hidden">
