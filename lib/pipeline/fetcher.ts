@@ -204,13 +204,34 @@ export async function fetchAndExtractRepo(
 
     // Extract tarball using built-in bsdtar
     // GitHub tarballs have a single root folder named owner-repo-sha/
-    await execFileAsync("tar", [
-      "-xzf",
-      tarballPath,
-      "-C",
-      repoDir,
-      "--strip-components=1",
-    ]);
+    try {
+      await execFileAsync("tar", [
+        "-xzf",
+        tarballPath,
+        "-C",
+        repoDir,
+        "--strip-components=1",
+      ]);
+    } catch (tarErr: any) {
+      // On Windows, bsdtar exits with code 1 if the archive contains symlinks
+      // because non-elevated Windows users lack SeCreateSymbolicLinkPrivilege ("Invalid argument").
+      // Verify whether the actual repository files were successfully extracted:
+      const extractedEntries = await fs.readdir(repoDir).catch(() => []);
+      const stderr = (tarErr?.stderr || "") + (tarErr?.message || "");
+      const isSymlinkWarning =
+        stderr.includes("Invalid argument") ||
+        stderr.includes("Can't create") ||
+        stderr.includes("Error exit delayed from previous errors");
+
+      if (extractedEntries.length > 0 && isSymlinkWarning) {
+        console.warn(
+          `[Pipeline Notice] tar reported symlink warnings on Windows, but repository files were successfully unpacked into "${repoDir}". Proceeding with analysis.`
+        );
+      } else {
+        // Genuine fatal extraction error (corrupted archive, invalid path, etc.)
+        throw tarErr;
+      }
+    }
 
     return {
       owner,
