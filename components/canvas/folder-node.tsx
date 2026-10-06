@@ -88,6 +88,33 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
 
   const updateNodeInternals = useUpdateNodeInternals();
   const listRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleFileMouseEnter = useCallback((filePath: string) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    onHoverFile?.(filePath);
+  }, [onHoverFile]);
+
+  const handleFileMouseLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      onHoverFile?.(null);
+      hoverTimeoutRef.current = null;
+    }, 40);
+  }, [onHoverFile]);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleScroll = useCallback(() => {
     updateNodeInternals(node.id);
@@ -150,7 +177,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
             e.stopPropagation();
             onToggleOpen(node.id);
           }}
-          className="h-9 px-2.5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--bg-subtle)] hover:bg-[var(--border-subtle)] cursor-pointer transition-colors"
+          className="h-9 px-2.5 flex items-center justify-between border-b border-[var(--border)] bg-[var(--bg-subtle)] hover:bg-[var(--border-subtle)] cursor-pointer"
           title={`Click or double-click to fold back (${node.folder})`}
         >
           <div className="flex items-center gap-1.5 min-w-0">
@@ -201,9 +228,9 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
                   e.stopPropagation();
                   onSelectFile(file.path);
                 }}
-                onMouseEnter={() => onHoverFile?.(file.path)}
-                onMouseLeave={() => onHoverFile?.(null)}
-                className={`relative h-6 px-2.5 flex items-center justify-between cursor-pointer transition-colors text-[11px] ${
+                onMouseEnter={() => handleFileMouseEnter(file.path)}
+                onMouseLeave={handleFileMouseLeave}
+                className={`relative h-6 px-2.5 flex items-center justify-between cursor-pointer text-[11px] ${
                   isRowDimmed ? "opacity-20 hover:opacity-80" : "opacity-100"
                 } ${
                   isFileSelected
@@ -221,7 +248,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
                   type="target"
                   position={Position.Left}
                   id={`file-in-${file.path}`}
-                  className="!w-1.5 !h-1.5 !bg-[var(--incoming)] !border-none z-10"
+                  className="!w-1.5 !h-1.5 !bg-[var(--incoming)] !border-none z-10 pointer-events-none"
                   style={{ left: "0px" }}
                 />
 
@@ -245,7 +272,7 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
                   type="source"
                   position={Position.Right}
                   id={`file-out-${file.path}`}
-                  className="!w-1.5 !h-1.5 !bg-[var(--outgoing)] !border-none z-10"
+                  className="!w-1.5 !h-1.5 !bg-[var(--outgoing)] !border-none z-10 pointer-events-none"
                   style={{ right: "0px" }}
                 />
               </div>

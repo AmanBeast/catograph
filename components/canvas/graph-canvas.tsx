@@ -86,18 +86,8 @@ function GraphCanvasInner({
         }
         return next;
       });
-
-      // Refit on open: may ONLY ever zoom out, never in
-      setTimeout(() => {
-        const currentZoom = getZoom();
-        fitView({
-          maxZoom: currentZoom, // Guarantees refit only zooms out or retains current scale
-          padding: 0.15,
-          duration: 250,
-        });
-      }, 50);
     },
-    [fitView, getZoom]
+    []
   );
 
   // Determine active/highlighted sets for dimming
@@ -310,6 +300,7 @@ function GraphCanvasInner({
               stroke: isEdgeActive ? "var(--incoming)" : "var(--border)",
               strokeWidth: isEdgeActive ? 1.5 : 1,
               opacity: isEdgeActive ? 0.75 : 0.15,
+              pointerEvents: "none",
             },
             markerEnd: {
               type: MarkerType.ArrowClosed,
@@ -363,6 +354,7 @@ function GraphCanvasInner({
             strokeWidth: isHoverEdge ? 2.5 : isWalkEdge ? 2 : isEdgeActive ? 1.5 : 0.75,
             opacity: isHoverEdge ? 1 : isWalkEdge ? 1 : isEdgeActive ? 0.9 : 0.15,
             zIndex: isHoverEdge ? 20 : isWalkEdge ? 15 : 0,
+            pointerEvents: "none",
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
@@ -415,7 +407,6 @@ function GraphCanvasInner({
         zoomOnDoubleClick={false}
         onNodeClick={handleNodeClick}
         onNodeDoubleClick={handleNodeDoubleClick}
-        fitView
         minZoom={0.1}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
