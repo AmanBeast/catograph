@@ -139,6 +139,26 @@ export async function fetchRepoMetadata(
  * Downloads a public repository archive tarball and extracts it to a temporary directory.
  * No token is ever stored or requested.
  */
+/**
+ * Returns the base directory for storing raw downloaded repositories within the project.
+ * Resolves to "<project_root>/github analyzer".
+ */
+export function getGithubAnalyzerBaseDir(): string {
+  return path.resolve(process.cwd(), "github analyzer");
+}
+
+/**
+ * Returns the repository directory path inside the "github analyzer" folder.
+ */
+export function getStoredRepoDir(owner: string, repo: string): string {
+  return path.join(getGithubAnalyzerBaseDir(), owner, repo);
+}
+
+/**
+ * Downloads a public repository archive tarball and extracts it into the project's
+ * "github analyzer" folder so the raw source code is permanently stored locally,
+ * and downstream pipeline stages fetch/parse code directly from this directory.
+ */
 export async function fetchAndExtractRepo(
   rawUrl: string
 ): Promise<FetchedRepoArchive> {
@@ -147,14 +167,14 @@ export async function fetchAndExtractRepo(
 
   const archiveUrl = `https://api.github.com/repos/${owner}/${repo}/tarball/${metadata.commitHash}`;
 
-  const tempBase = path.join(os.tmpdir(), "cartograph-runs");
-  await fs.mkdir(tempBase, { recursive: true });
+  // Store inside the project's "github analyzer" directory
+  const baseDir = getGithubAnalyzerBaseDir();
+  await fs.mkdir(baseDir, { recursive: true });
 
-  const runId = `${owner}-${repo}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  const tarballPath = path.join(tempBase, `${runId}.tar.gz`);
-  const extractDir = path.join(tempBase, runId);
+  const repoDir = getStoredRepoDir(owner, repo);
+  const tarballPath = path.join(baseDir, `${owner}-${repo}-${Date.now()}.tar.gz`);
 
-  await fs.mkdir(extractDir, { recursive: true });
+  await fs.mkdir(repoDir, { recursive: true });
 
   try {
     const archiveRes = await fetch(archiveUrl, {
@@ -176,13 +196,19 @@ export async function fetchAndExtractRepo(
     const nodeReadable = Readable.fromWeb(archiveRes.body as any);
     await pipeline(nodeReadable, fileStream);
 
+    // Clean any prior extraction in repoDir so old removed files aren't leftover
+    const existingEntries = await fs.readdir(repoDir).catch(() => []);
+    for (const entry of existingEntries) {
+      await fs.rm(path.join(repoDir, entry), { recursive: true, force: true });
+    }
+
     // Extract tarball using built-in bsdtar
     // GitHub tarballs have a single root folder named owner-repo-sha/
     await execFileAsync("tar", [
       "-xzf",
       tarballPath,
       "-C",
-      extractDir,
+      repoDir,
       "--strip-components=1",
     ]);
 
@@ -192,10 +218,10 @@ export async function fetchAndExtractRepo(
       repoName: metadata.name,
       defaultBranch: metadata.defaultBranch,
       commitHash: metadata.commitHash,
-      extractDir,
+      extractDir: repoDir,
     };
   } finally {
-    // Delete the compressed tarball to free disk space immediately
+    // Delete the compressed tarball to free space, but RETAIN the raw source code in repoDir!
     try {
       await fs.unlink(tarballPath);
     } catch {
@@ -206,12 +232,15 @@ export async function fetchAndExtractRepo(
 
 /**
  * Cleans up temporary extracted repository files safely.
+ * Preserves folders inside "github analyzer" as raw source code storage.
  */
 export async function cleanupExtractDir(dirPath: string): Promise<void> {
-  if (!dirPath || !dirPath.includes("cartograph-runs")) return;
-  try {
-    await fs.rm(dirPath, { recursive: true, force: true });
-  } catch (err) {
-    console.warn(`[Pipeline Cleanup] Failed to delete temporary directory "${dirPath}":`, err);
+  // Only remove legacy temporary folders in cartograph-runs, NEVER the "github analyzer" storage
+  if (dirPath && dirPath.includes("cartograph-runs")) {
+    try {
+      await fs.rm(dirPath, { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[Pipeline Cleanup] Failed to delete temporary directory "${dirPath}":`, err);
+    }
   }
 }
