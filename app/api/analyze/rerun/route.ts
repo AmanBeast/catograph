@@ -60,10 +60,12 @@ export async function POST(req: Request) {
       );
     }
 
-    // Delete previous files, edges, and insights associated with this analysis for a fresh re-run
-    await supabase.from("files").delete().eq("analysis_id", analysisId);
-    await supabase.from("edges").delete().eq("analysis_id", analysisId);
+    // Delete previous files, edges, insights, routes, and file_roles associated with this analysis for a fresh re-run
+    await supabase.from("routes").delete().eq("analysis_id", analysisId);
+    await supabase.from("file_roles").delete().eq("analysis_id", analysisId);
     await supabase.from("insights").delete().eq("analysis_id", analysisId);
+    await supabase.from("edges").delete().eq("analysis_id", analysisId);
+    await supabase.from("files").delete().eq("analysis_id", analysisId);
 
     // Reset analysis status
     await supabase

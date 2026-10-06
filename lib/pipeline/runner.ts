@@ -50,7 +50,10 @@ export async function runPipeline({
   orgId,
   token,
 }: PipelineParams): Promise<void> {
-  const supabase = await createServerDbClient({ token, orgId });
+  // In background pipeline execution, do NOT attach short-lived Clerk user session tokens
+  // because user tokens expire in 60s, causing database operations on large repos to fail mid-pipeline.
+  // Instead, authenticate using orgId with publishable key, which isolates queries via x-org-id without expiration.
+  const supabase = await createServerDbClient({ orgId });
   let currentStage: PipelineStage = "pending";
   let extractDir: string | null = null;
 
@@ -63,18 +66,32 @@ export async function runPipeline({
     currentStage = stage;
     const message = customMessage || STAGE_MESSAGES[stage];
 
-    const { error } = await supabase
-      .from("analyses")
-      .update({
-        status,
-        stage,
-        stage_message: message,
-        ...extraFields,
-      })
-      .eq("id", analysisId);
+    // Retry up to 3 times on transient network error
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { error } = await supabase
+        .from("analyses")
+        .update({
+          status,
+          stage,
+          stage_message: message,
+          ...extraFields,
+        })
+        .eq("id", analysisId);
 
-    if (error) {
-      console.warn(`[Pipeline Stage Update Warning (${stage})]:`, error.message);
+      if (!error) {
+        return;
+      }
+
+      lastError = new Error(error.message);
+      console.warn(`[Pipeline Stage Update Warning (${stage}) attempt ${attempt}]:`, error.message);
+      if (attempt < 3) {
+        await new Promise((res) => setTimeout(res, 400 * attempt));
+      }
+    }
+
+    if (stage === "complete" || status === "failed") {
+      throw lastError || new Error(`Failed to update analysis stage to ${stage}`);
     }
   }
 
@@ -159,23 +176,33 @@ export async function runPipeline({
       const batch = filesToInsert.slice(i, i + BATCH_SIZE);
       const { error: fileErr } = await supabase.from("files").insert(batch);
       if (fileErr) {
-        throw new Error(`Failed to store files batch ${i / BATCH_SIZE + 1}: ${fileErr.message}`);
+        throw new Error(`Failed to store files batch ${Math.floor(i / BATCH_SIZE) + 1}: ${fileErr.message}`);
       }
     }
 
-    // 5b. Retrieve inserted file IDs to map path -> file_id for edges, routes, and roles
-    const { data: insertedFiles, error: fetchErr } = await supabase
-      .from("files")
-      .select("id, path")
-      .eq("analysis_id", analysisId);
-
-    if (fetchErr || !insertedFiles) {
-      throw new Error(`Failed to retrieve file mapping: ${fetchErr?.message || "No files found"}`);
-    }
-
+    // 5b. Retrieve all inserted file IDs with pagination to map path -> file_id
     const pathToFileId = new Map<string, string>();
-    for (const f of insertedFiles) {
-      pathToFileId.set(f.path, f.id);
+    let fileOffset = 0;
+    const CHUNK_SIZE = 1000;
+    while (true) {
+      const { data: insertedFiles, error: fetchErr } = await supabase
+        .from("files")
+        .select("id, path")
+        .eq("analysis_id", analysisId)
+        .range(fileOffset, fileOffset + CHUNK_SIZE - 1);
+
+      if (fetchErr || !insertedFiles) {
+        throw new Error(`Failed to retrieve file mapping: ${fetchErr?.message || "No files found"}`);
+      }
+
+      for (const f of insertedFiles) {
+        pathToFileId.set(f.path, f.id);
+      }
+
+      if (insertedFiles.length < CHUNK_SIZE) {
+        break;
+      }
+      fileOffset += CHUNK_SIZE;
     }
 
     // 5c. Insert edges in batches of 500
@@ -205,7 +232,7 @@ export async function runPipeline({
       const batch = edgesToInsert.slice(i, i + EDGE_BATCH_SIZE);
       const { error: edgeErr } = await supabase.from("edges").insert(batch);
       if (edgeErr) {
-        throw new Error(`Failed to store edges batch ${i / EDGE_BATCH_SIZE + 1}: ${edgeErr.message}`);
+        throw new Error(`Failed to store edges batch ${Math.floor(i / EDGE_BATCH_SIZE) + 1}: ${edgeErr.message}`);
       }
     }
 
@@ -227,7 +254,10 @@ export async function runPipeline({
 
       for (let i = 0; i < insightsToInsert.length; i += BATCH_SIZE) {
         const batch = insightsToInsert.slice(i, i + BATCH_SIZE);
-        await supabase.from("insights").insert(batch);
+        const { error: insErr } = await supabase.from("insights").insert(batch);
+        if (insErr) {
+          console.warn(`[Pipeline Warning] Failed to insert insights batch:`, insErr.message);
+        }
       }
     }
 
@@ -250,7 +280,10 @@ export async function runPipeline({
 
       for (let i = 0; i < routesToInsert.length; i += BATCH_SIZE) {
         const batch = routesToInsert.slice(i, i + BATCH_SIZE);
-        await supabase.from("routes").insert(batch);
+        const { error: routeErr } = await supabase.from("routes").insert(batch);
+        if (routeErr) {
+          console.warn(`[Pipeline Warning] Failed to insert routes batch:`, routeErr.message);
+        }
       }
     }
 
@@ -272,7 +305,10 @@ export async function runPipeline({
 
       for (let i = 0; i < rolesToInsert.length; i += BATCH_SIZE) {
         const batch = rolesToInsert.slice(i, i + BATCH_SIZE);
-        await supabase.from("file_roles").insert(batch);
+        const { error: roleErr } = await supabase.from("file_roles").insert(batch);
+        if (roleErr) {
+          console.warn(`[Pipeline Warning] Failed to insert roles batch:`, roleErr.message);
+        }
       }
     }
 

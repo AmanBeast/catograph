@@ -85,17 +85,37 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
     };
   }
 
-  // Load files
-  const { data: rawFiles } = await supabase
-    .from("files")
-    .select("id, path, name, extension, size_bytes, lines_count, fan_in, fan_out, status, skip_reason")
-    .eq("analysis_id", analysisId);
+  // Helper to paginate and fetch all rows beyond PostgREST 1000-row limit
+  async function fetchAllRows<T>(
+    fetcher: (from: number, to: number) => Promise<{ data: T[] | null; error: unknown }>
+  ): Promise<T[]> {
+    const results: T[] = [];
+    const PAGE = 1000;
+    let offset = 0;
+    while (true) {
+      const { data, error } = await fetcher(offset, offset + PAGE - 1);
+      if (error || !data || data.length === 0) break;
+      results.push(...data);
+      if (data.length < PAGE) break;
+      offset += PAGE;
+    }
+    return results;
+  }
+
+  // Load files (paginated to handle repos > 1000 files)
+  const rawFiles = await fetchAllRows(async (from, to) =>
+    supabase
+      .from("files")
+      .select("id, path, name, extension, size_bytes, lines_count, fan_in, fan_out, status, skip_reason")
+      .eq("analysis_id", analysisId)
+      .range(from, to)
+  );
 
   const fileIdToPath = new Map<string, string>();
   const parsedFiles: ParsedFile[] = [];
   const foldersMap = new Map<string, number>();
 
-  for (const f of rawFiles || []) {
+  for (const f of rawFiles) {
     fileIdToPath.set(f.id, f.path);
 
     if (f.status === "parsed") {
@@ -120,26 +140,29 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
     }
   }
 
-  // Load edges
-  const { data: rawEdges } = await supabase
-    .from("edges")
-    .select(`
-      id,
-      source_file_id,
-      target_file_id,
-      raw_import_path,
-      import_kind,
-      is_resolved,
-      unresolved_reason
-    `)
-    .eq("analysis_id", analysisId);
+  // Load edges (paginated to handle repos > 1000 edges)
+  const rawEdges = await fetchAllRows(async (from, to) =>
+    supabase
+      .from("edges")
+      .select(`
+        id,
+        source_file_id,
+        target_file_id,
+        raw_import_path,
+        import_kind,
+        is_resolved,
+        unresolved_reason
+      `)
+      .eq("analysis_id", analysisId)
+      .range(from, to)
+  );
 
   const edges: Edge[] = [];
   let internalResolvedEdges = 0;
   let unresolvedImports = 0;
   let externalImports = 0;
 
-  for (const e of rawEdges || []) {
+  for (const e of rawEdges) {
     const sourcePath = fileIdToPath.get(e.source_file_id);
     if (!sourcePath) continue;
 
@@ -196,14 +219,17 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
     }
   }
 
-  // Load file roles (Phase 8)
-  const { data: rawRoles } = await supabase
-    .from("file_roles")
-    .select("id, file_id, role, confidence")
-    .eq("analysis_id", analysisId);
+  // Load file roles (Phase 8 - paginated)
+  const rawRoles = await fetchAllRows(async (from, to) =>
+    supabase
+      .from("file_roles")
+      .select("id, file_id, role, confidence")
+      .eq("analysis_id", analysisId)
+      .range(from, to)
+  );
 
   const fileRoles: FileRole[] = [];
-  for (const fr of rawRoles || []) {
+  for (const fr of rawRoles) {
     const filePath = fileIdToPath.get(fr.file_id);
     if (filePath) {
       fileRoles.push({
