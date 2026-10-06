@@ -223,6 +223,7 @@ export function computeRepositoryFolding(
   }
 
   // Process resolved edges between internal files
+  const seenEdgeIds = new Set<string>();
   for (const edge of edges) {
     if (edge.status !== "resolved") continue;
 
@@ -232,8 +233,12 @@ export function computeRepositoryFolding(
     // Verify both endpoints exist
     if (!sourceNodeId || !targetNodeId) continue;
 
+    const edgeId = `${edge.source}->${edge.target}`;
+    if (seenEdgeIds.has(edgeId)) continue;
+    seenEdgeIds.add(edgeId);
+
     foldedEdges.push({
-      id: `${edge.source}->${edge.target}`,
+      id: edgeId,
       source: edge.source,
       target: edge.target,
       sourceNodeId,

@@ -102,10 +102,10 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
             : "border-[var(--border)]"
         } bg-[var(--bg-surface)] shadow-md text-xs font-mono select-none ${opacityClass} ${transitionClass}`}
       >
-        {/* Node-level target handle at top */}
+        {/* Node-level target handle at left */}
         <Handle
           type="target"
-          position={Position.Top}
+          position={Position.Left}
           id="node-in"
           className="!bg-[var(--border)] !w-2 !h-2"
         />
@@ -230,10 +230,10 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
         )}
 
 
-        {/* Node-level source handle at bottom */}
+        {/* Node-level source handle at right */}
         <Handle
           type="source"
-          position={Position.Bottom}
+          position={Position.Right}
           id="node-out"
           className="!bg-[var(--border)] !w-2 !h-2"
         />
@@ -271,10 +271,10 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
       } bg-[var(--bg-surface)] shadow-xs hover:border-[var(--text-secondary)] cursor-pointer text-xs font-mono select-none flex flex-col justify-between p-2 relative ${opacityClass} ${transitionClass}`}
       title={`Folder: ${node.folder}\nDouble-click to open panel\n${node.fileCount} files${selectedCategory ? ` (${matchedFilesCount} matched)` : ""}, ${node.fanIn} incoming dependents`}
     >
-      {/* Top Handle (Incoming) */}
+      {/* Left Handle (Incoming) */}
       <Handle
         type="target"
-        position={Position.Top}
+        position={Position.Left}
         id="node-in"
         className="!bg-[var(--incoming)] !w-2 !h-2 !border-none"
       />
@@ -321,10 +321,10 @@ export const FolderNode = memo(function FolderNode({ data }: FolderNodeProps) {
         </span>
       </div>
 
-      {/* Bottom Handle (Outgoing) */}
+      {/* Right Handle (Outgoing) */}
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={Position.Right}
         id="node-out"
         className="!bg-[var(--outgoing)] !w-2 !h-2 !border-none"
       />

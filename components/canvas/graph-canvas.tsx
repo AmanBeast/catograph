@@ -256,7 +256,7 @@ function GraphCanvasInner({
             target: e.targetNodeId,
             sourceHandle: "node-out",
             targetHandle: "node-in",
-            type: "smoothstep",
+            type: "default",
             animated: false,
             style: {
               stroke: isEdgeActive ? "var(--incoming)" : "var(--border)",
@@ -300,7 +300,7 @@ function GraphCanvasInner({
           target: e.targetNodeId,
           sourceHandle,
           targetHandle,
-          type: "smoothstep",
+          type: "default",
           animated: isHoverEdge || isWalkEdge || (isEdgeActive && activeElements.hasSelection),
           style: {
             stroke: isHoverEdge
@@ -375,11 +375,12 @@ function GraphCanvasInner({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
+        nodesDraggable={false}
         fitView
         minZoom={0.1}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: "smoothstep" }}
+        defaultEdgeOptions={{ type: "default" }}
       >
         <Background
           color="var(--border)"

@@ -54,9 +54,9 @@ export function computeDagreLayout(
 ): Map<string, NodeLayoutPosition> {
   const g = new dagre.graphlib.Graph();
   g.setGraph({
-    rankdir: "TB",
-    ranksep: 70,
-    nodesep: 50,
+    rankdir: "LR",
+    ranksep: 100,
+    nodesep: 32,
     align: "UL",
   });
   g.setDefaultEdgeLabel(() => ({}));
