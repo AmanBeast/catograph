@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { auth } from "@clerk/nextjs/server";
-import { env } from "@/lib/env";
+import { env } from "../env";
 
 /**
  * Creates a Supabase client for server-side execution that attaches the

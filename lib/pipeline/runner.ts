@@ -166,6 +166,7 @@ export async function runPipeline({
       extension: file.extension,
       size_bytes: file.sizeBytes,
       lines_count: file.linesCount,
+      content_hash: file.contentHash,
       status: "parsed",
       fan_in: file.fanIn,
       fan_out: file.fanOut,

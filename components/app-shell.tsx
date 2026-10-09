@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { createBrowserDbClient } from "@/lib/db/client";
 import { AppHeader } from "./app-header";
@@ -23,6 +24,7 @@ export function AppShell({
   userEmail,
   analyses: initialAnalyses = [],
 }: AppShellProps) {
+  const router = useRouter();
   const { getToken } = useAuth();
   const [analyses, setAnalyses] = useState<AnalysisRow[]>(initialAnalyses || []);
 
@@ -30,6 +32,33 @@ export function AppShell({
   useEffect(() => {
     setAnalyses(initialAnalyses || []);
   }, [initialAnalyses]);
+
+  // Check for pending repository submitted from landing page hero before sign-in
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const pendingRepo = sessionStorage.getItem("cartograph_pending_repo");
+      if (pendingRepo) {
+        sessionStorage.removeItem("cartograph_pending_repo");
+        fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repoUrl: pendingRepo }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.analysisId) {
+              router.push(`/analysis/${data.analysisId}`);
+            }
+          })
+          .catch((err) => {
+            console.error("Auto-analyze pending repo failed:", err);
+          });
+      }
+    } catch {
+      // Ignore sessionStorage access errors
+    }
+  }, [router]);
 
   const refreshAnalyses = useCallback(async () => {
     try {

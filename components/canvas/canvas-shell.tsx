@@ -15,6 +15,7 @@ import { CanvasCenter } from "./canvas-center";
 import { DetailPane } from "./detail-pane";
 
 interface CanvasShellProps {
+  analysisId?: string;
   data: ParseResult;
   repoName?: string;
   commitHash?: string | null;
@@ -23,6 +24,7 @@ interface CanvasShellProps {
 }
 
 export function CanvasShell({
+  analysisId,
   data,
   repoName = "Repository",
   commitHash,
@@ -123,8 +125,11 @@ export function CanvasShell({
           onHoverNode={setHoveredNodeId}
         />
 
-        {/* Right Column: Detail Inspector Pane (Phase 5 & 6) */}
+        {/* Right Column: Detail Inspector Pane (Phase 5, 6 & 10) */}
         <DetailPane
+          analysisId={analysisId}
+          commitHash={commitHash}
+          onReRun={onReRun}
           data={data}
           repoName={repoName}
           selectedNodeId={selectedNodeId}

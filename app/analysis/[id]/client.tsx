@@ -43,6 +43,7 @@ export function AnalysisClient({ initialData }: AnalysisClientProps) {
   if (analysis.status === "complete" && parseResult && !isReRunning) {
     return (
       <CanvasShell
+        analysisId={analysis.id}
         data={parseResult}
         repoName={analysis.repoName}
         commitHash={analysis.commit_hash}

@@ -26,3 +26,22 @@ export function createBrowserDbClient(token?: string | null): SupabaseClient {
     accessToken: async () => token ?? null,
   });
 }
+
+/**
+ * Creates a direct Supabase client for standalone scripts outside of browser/Clerk runtime.
+ */
+export function getScriptDbClient(): SupabaseClient {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+

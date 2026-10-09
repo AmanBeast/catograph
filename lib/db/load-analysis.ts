@@ -106,7 +106,7 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
   const rawFiles = await fetchAllRows(async (from, to) =>
     supabase
       .from("files")
-      .select("id, path, name, extension, size_bytes, lines_count, fan_in, fan_out, status, skip_reason")
+      .select("id, path, name, extension, size_bytes, lines_count, fan_in, fan_out, status, skip_reason, content_hash")
       .eq("analysis_id", analysisId)
       .range(from, to)
   );
@@ -133,7 +133,7 @@ export async function loadAnalysisData(analysisId: string): Promise<LoadedAnalys
         extension: f.extension || "",
         linesCount: f.lines_count || 0,
         sizeBytes: f.size_bytes || 0,
-        contentHash: "",
+        contentHash: f.content_hash || "",
         fanIn: f.fan_in || 0,
         fanOut: f.fan_out || 0,
       });

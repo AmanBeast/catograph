@@ -1,10 +1,17 @@
 import { auth, currentUser, clerkClient } from "@clerk/nextjs/server";
 import { AppShell } from "@/components/app-shell";
+import { LandingPage } from "@/components/landing/landing-page";
 import { OrgAutoActivator } from "@/components/org/org-auto-activator";
 import { getDashboardAnalyses } from "@/lib/db/analyses";
 
 export default async function HomePage() {
   const { userId, orgId, orgSlug } = await auth();
+
+  // If signed out, render the marketing landing page
+  if (!userId) {
+    return <LandingPage isSignedIn={false} />;
+  }
+
   const user = await currentUser();
 
   let activeOrgId = orgId;

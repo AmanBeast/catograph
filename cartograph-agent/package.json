@@ -1,0 +1,38 @@
+{
+  "name": "cartograph-agent",
+  "version": "1.0.0",
+  "description": "Cartograph Repository Intelligence Agent",
+  "main": "index.ts",
+  "scripts": {
+    "start": "tsx index.ts --server",
+    "dev": "tsx watch index.ts --server",
+    "query": "tsx index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.9.1",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "pnpm@12.9.1",
+  "type": "module",
+  "dependencies": {
+    "@langchain/anthropic": "^1.5.12",
+    "@langchain/core": "^1.2.14",
+    "@langchain/google-genai": "^2.3.2",
+    "@langchain/openai": "^1.6.2",
+    "deepagents": "^1.14.1",
+    "dotenv": "^18.0.5",
+    "langchain": "^1.5.15",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

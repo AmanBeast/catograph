@@ -6,6 +6,8 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
  * ensuring no HTML is sent to unauthenticated visitors.
  */
 const isPublicRoute = createRouteMatcher([
+  "/",
+  "/landing(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);

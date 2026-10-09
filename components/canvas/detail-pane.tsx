@@ -12,8 +12,13 @@ import {
   type TransitiveWalkResult,
   type TransitiveWalkDirection,
 } from "@/lib/canvas/graph-math.ts";
+import { ExplanationRenderer } from "./explanation-renderer";
+import type { ExplanationResult } from "@/lib/ai/types";
 
 export interface DetailPaneProps {
+  analysisId?: string;
+  commitHash?: string | null;
+  onReRun?: () => void;
   data: ParseResult;
   repoName?: string;
   selectedNodeId: string | null;
@@ -37,6 +42,9 @@ function formatBytes(bytes: number): string {
 }
 
 export function DetailPane({
+  analysisId,
+  commitHash,
+  onReRun,
   data,
   repoName = "honojs/hono",
   selectedNodeId,
@@ -184,6 +192,129 @@ export function DetailPane({
       .sort((a, b) => b.count - a.count);
   }, [selectedFolderNode]);
 
+  // Selected folder external dependencies (outside this folder)
+  const folderDependencies = useMemo(() => {
+    if (!selectedFolderNode) return [];
+    const internalPaths = new Set(selectedFolderNode.files.map((f) => f.path));
+    const set = new Set<string>();
+    for (const e of data.edges) {
+      if (e.status === "resolved" && internalPaths.has(e.source) && !internalPaths.has(e.target)) {
+        set.add(e.target);
+      }
+    }
+    return Array.from(set).sort();
+  }, [selectedFolderNode, data.edges]);
+
+  // Selected folder external dependents (outside this folder importing into it)
+  const folderDependents = useMemo(() => {
+    if (!selectedFolderNode) return [];
+    const internalPaths = new Set(selectedFolderNode.files.map((f) => f.path));
+    const set = new Set<string>();
+    for (const e of data.edges) {
+      if (e.status === "resolved" && !internalPaths.has(e.source) && internalPaths.has(e.target)) {
+        set.add(e.source);
+      }
+    }
+    return Array.from(set).sort();
+  }, [selectedFolderNode, data.edges]);
+
+  // Explanations cache map keyed by target path / folder id
+  // Persists across selection shifts: move away, come back, and it is still there without a second click!
+  const [explanationCache, setExplanationCache] = useState<Record<string, ExplanationResult>>({});
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [explanationError, setExplanationError] = useState<string | null>(null);
+
+  const allFilePathsSet = useMemo(() => {
+    return new Set(data.files.map((f) => f.path));
+  }, [data.files]);
+
+  const currentTargetKey = useMemo(() => {
+    if (selectedFile) return selectedFile.path;
+    if (selectedFolderNode) return selectedFolderNode.label || selectedFolderNode.id;
+    return null;
+  }, [selectedFile, selectedFolderNode]);
+
+  const currentExplanation = currentTargetKey ? explanationCache[currentTargetKey] : null;
+
+  const isExplanationStale = useMemo(() => {
+    if (!currentExplanation) return false;
+    if (currentExplanation.isStale) return true;
+    if (selectedFile && selectedFile.contentHash && currentExplanation.contentHash) {
+      if (selectedFile.contentHash !== currentExplanation.contentHash) return true;
+    }
+    if (commitHash && currentExplanation.commitHash) {
+      if (commitHash !== currentExplanation.commitHash) return true;
+    }
+    return false;
+  }, [currentExplanation, selectedFile, commitHash]);
+
+  const handleFetchExplanation = async (forceRefresh = false) => {
+    if (!currentTargetKey) return;
+    setIsLoadingExplanation(true);
+    setExplanationError(null);
+
+    try {
+      let bodyPayload: Record<string, unknown>;
+
+      if (selectedFile) {
+        bodyPayload = {
+          analysisId: analysisId || "current",
+          targetType: "file",
+          filePath: selectedFile.path,
+          contentHash: selectedFile.contentHash,
+          commitHash: commitHash || null,
+          sizeBytes: selectedFile.sizeBytes,
+          linesCount: selectedFile.linesCount,
+          currentRole: identifyFileConvention(selectedFile).label,
+          dependencies: fileDependencies,
+          dependents: fileDependents,
+          externalImports: fileExternalImports,
+          forceRefresh,
+        };
+      } else if (selectedFolderNode) {
+        bodyPayload = {
+          analysisId: analysisId || "current",
+          targetType: "folder",
+          folderPath: selectedFolderNode.label,
+          contentHash: "",
+          commitHash: commitHash || null,
+          files: selectedFolderNode.files.map((f) => ({
+            path: f.path,
+            name: f.name,
+            linesCount: f.linesCount,
+            role: identifyFileConvention(f).label,
+          })),
+          incomingDependents: folderDependents,
+          outgoingDependencies: folderDependencies,
+          forceRefresh,
+        };
+      } else {
+        return;
+      }
+
+      const res = await fetch("/api/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyPayload),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Failed to generate explanation (${res.status})`);
+      }
+
+      const result: ExplanationResult = await res.json();
+      setExplanationCache((prev) => ({
+        ...prev,
+        [currentTargetKey]: result,
+      }));
+    } catch (err: unknown) {
+      setExplanationError(err instanceof Error ? err.message : "Failed to generate explanation.");
+    } finally {
+      setIsLoadingExplanation(false);
+    }
+  };
+
   const hasSelection = Boolean(selectedFile || selectedFolderNode);
 
   return (
@@ -256,34 +387,221 @@ export function DetailPane({
         {/* TAB: EXPLANATION (Empty state as specified until model calls in Phase 8)    */}
         {/* ========================================================================= */}
         {activeTab === "explanation" ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-4 min-h-[300px]">
-            <div className="w-10 h-10 rounded border border-dashed border-[var(--border)] flex items-center justify-center mb-3 text-[var(--text-secondary)]">
-              <svg
-                className="w-5 h-5 stroke-current"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth="1.5"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
-                />
-              </svg>
-            </div>
-            <span className="text-[11px] font-semibold text-[var(--text-primary)] mb-1">
-              AI Architectural Explanation
-            </span>
-            <p className="text-[10px] text-[var(--text-muted)] max-w-[240px] leading-relaxed mb-3">
-              {selectedFile
-                ? `Synthesis for ${selectedFile.name} will appear here when an AI model is connected. It will explain this file in the context of its ${fileDependents.length} dependents and ${fileDependencies.length} dependencies.`
-                : selectedFolderNode
-                ? `Synthesis for folder ${selectedFolderNode.label} (${selectedFolderNode.fileCount} files) will describe its boundaries and architecture once an AI model is connected.`
-                : "Whole-repository architectural synthesis will appear here once an AI model is configured in Phase 8."}
-            </p>
-            <span className="text-[9px] text-[var(--text-secondary)] border border-[var(--border)] px-2 py-0.5 rounded bg-[var(--bg-subtle)]">
-              MODEL CALL PENDING (PHASE 8)
-            </span>
+          <div className="flex flex-col gap-4">
+            {/* Case A: Specific file or folded folder is selected */}
+            {hasSelection ? (
+              <div className="flex flex-col gap-3">
+                {/* Target Context Header Card */}
+                <div className="border border-[var(--border)] rounded bg-[var(--bg-subtle)]/50 p-2.5 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[12px]">
+                        {selectedFile ? "📄" : "📁"}
+                      </span>
+                      <span className="font-semibold text-[11px] text-[var(--text-primary)] truncate">
+                        {selectedFile ? selectedFile.name : selectedFolderNode?.label}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Role Badge (Heuristic or Model-assigned) */}
+                      {currentExplanation?.role ? (
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 border border-purple-500/30 uppercase font-semibold">
+                          role: {currentExplanation.role}
+                        </span>
+                      ) : selectedFile ? (
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg-surface)] text-[var(--text-secondary)] border border-[var(--border)] uppercase">
+                          {identifyFileConvention(selectedFile).label}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] font-mono text-[var(--text-muted)] truncate">
+                    {selectedFile ? selectedFile.path : `${selectedFolderNode?.fileCount} files encapsulated`}
+                  </div>
+                </div>
+
+                {/* Staleness Banner: If file or repo has changed since explanation was cached */}
+                {isExplanationStale && (
+                  <div className="border border-amber-500/40 bg-amber-500/10 rounded p-2.5 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-amber-400 font-semibold text-[11px]">
+                        <span>⚠️</span>
+                        <span>Stale Explanation</span>
+                      </div>
+                      <span className="text-[9px] font-mono text-amber-400/80 uppercase">
+                        content modified
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-amber-300/90 leading-relaxed">
+                      The file content or repository commit has moved past the analysed snapshot.
+                    </p>
+                    <div className="flex items-center gap-2 pt-1 border-t border-amber-500/20">
+                      <button
+                        type="button"
+                        onClick={() => handleFetchExplanation(true)}
+                        disabled={isLoadingExplanation}
+                        className="text-[10px] px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 font-semibold cursor-pointer transition-colors"
+                      >
+                        {isLoadingExplanation ? "Refreshing..." : "Re-explain file"}
+                      </button>
+                      {onReRun && (
+                        <button
+                          type="button"
+                          onClick={onReRun}
+                          className="text-[10px] px-2 py-1 rounded bg-[var(--bg-surface)] hover:bg-[var(--bg-subtle)] text-[var(--text-secondary)] border border-[var(--border)] cursor-pointer transition-colors"
+                        >
+                          Re-analyse repository
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Active Explanation Content or Fetch Action Card */}
+                {currentExplanation ? (
+                  <div className="flex flex-col gap-3">
+                    {/* Rendered Prose with Clickable File Links */}
+                    <div className="border border-[var(--border)] rounded bg-[var(--bg-surface)] p-3">
+                      <ExplanationRenderer
+                        content={currentExplanation.summary}
+                        filePathsSet={allFilePathsSet}
+                        onSelectFile={onSelectFile}
+                      />
+                    </div>
+
+                    {/* Telemetry, Caching & Trace Metadata Bar */}
+                    <div className="border border-[var(--border)] rounded bg-[var(--bg-subtle)]/40 p-2 flex flex-col gap-1.5 font-mono text-[9.5px]">
+                      <div className="flex items-center justify-between text-[var(--text-muted)]">
+                        <span className="flex items-center gap-1.5">
+                          {currentExplanation.cached ? (
+                            <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                              <span>⚡</span>
+                              <span>Instant cache hit (0 tokens)</span>
+                            </span>
+                          ) : (
+                            <span className="text-[var(--text-secondary)]">
+                              Total tokens: {currentExplanation.tokenCount}
+                            </span>
+                          )}
+                        </span>
+
+                        <span className="text-[var(--text-muted)] truncate">
+                          {currentExplanation.modelVersion}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-[var(--border-subtle)] text-[var(--text-muted)]">
+                        {/* Tracing status indicator per Phase 10 spec */}
+                        <div className="flex items-center gap-1">
+                          {currentExplanation.traced ? (
+                            <span className="text-cyan-400 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" />
+                              <span>Traced (LangSmith)</span>
+                            </span>
+                          ) : currentExplanation.tracingConfigured ? (
+                            <span className="text-cyan-400 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" />
+                              <span>Traced</span>
+                            </span>
+                          ) : (
+                            <span className="text-amber-400 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                              <span>Tracing unconfigured</span>
+                            </span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleFetchExplanation(true)}
+                          disabled={isLoadingExplanation}
+                          className="hover:text-[var(--accent)] underline underline-offset-2 cursor-pointer transition-colors"
+                          title="Force re-execution bypassing cache"
+                        >
+                          {isLoadingExplanation ? "refreshing..." : "re-explain"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Initial State before explanation is generated */
+                  <div className="border border-[var(--border)] rounded bg-[var(--bg-subtle)]/30 p-3.5 flex flex-col items-center text-center gap-3">
+                    <div className="w-8 h-8 rounded border border-[var(--border)] bg-[var(--bg-surface)] flex items-center justify-center text-[var(--accent)] text-sm">
+                      ✨
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <div className="font-semibold text-[11px] text-[var(--text-primary)]">
+                        {selectedFile ? "Explain this file" : "Explain folded folder"}
+                      </div>
+                      <p className="text-[10px] text-[var(--text-muted)] leading-relaxed max-w-[260px]">
+                        {selectedFile
+                          ? `Synthesise what this file does based on its ${fileDependents.length} dependents and ${fileDependencies.length} dependencies.`
+                          : `Explain encapsulation boundaries and why ${folderDependents.length} external files depend on this module.`}
+                      </p>
+                    </div>
+
+                    {explanationError && (
+                      <div className="w-full text-[10px] text-red-400 bg-red-500/10 border border-red-500/30 p-2 rounded text-left leading-relaxed">
+                        {explanationError}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleFetchExplanation(false)}
+                      disabled={isLoadingExplanation}
+                      className="w-full py-2 px-3 rounded bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white font-medium text-[11px] flex items-center justify-center gap-2 cursor-pointer transition-all shadow-xs disabled:opacity-50"
+                    >
+                      {isLoadingExplanation ? (
+                        <>
+                          <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Analysing neighbours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>✨</span>
+                          <span>Explain with Gemini</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div className="text-[9px] font-mono text-[var(--text-muted)]">
+                      Traced with LangSmith · Cached by content hash
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Case B: Resting State (No node or file selected) */
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-4 min-h-[300px]">
+                <div className="w-10 h-10 rounded border border-dashed border-[var(--border)] flex items-center justify-center mb-3 text-[var(--accent)]">
+                  <svg
+                    className="w-5 h-5 stroke-current"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth="1.5"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
+                    />
+                  </svg>
+                </div>
+                <span className="text-[11px] font-semibold text-[var(--text-primary)] mb-1">
+                  Architectural Intelligence
+                </span>
+                <p className="text-[10px] text-[var(--text-muted)] max-w-[240px] leading-relaxed mb-3">
+                  Select any file or folded folder on the map to generate its architectural explanation written from real graph neighbours.
+                </p>
+                <div className="text-[9px] text-[var(--text-secondary)] border border-[var(--border)] px-2 py-0.5 rounded bg-[var(--bg-subtle)]">
+                  {data.files.length} FILES · {foldedNodes.length} FOLDED MODULES
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* ========================================================================= */
